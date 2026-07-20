@@ -1,4 +1,4 @@
-# Sunrise Apartments — maintenance app
+# Derhaus Apartments — maintenance app
 
 Splits water usage (by meter reading, with supply-vs-metered discrepancy
 reconciliation) and shared expenses (watchman, EB, drainage, etc.) equally
