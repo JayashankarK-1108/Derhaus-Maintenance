@@ -146,9 +146,10 @@ app.get('/api/water-bookings', async (req, res) => {
   if (monthErr) return res.status(400).json({ error: monthErr });
   try {
     const { rows } = await pool.query(
-      `SELECT * FROM water_bookings
-       WHERE to_char(booking_date, 'YYYY-MM') = $1
-       ORDER BY booking_date, id`, [month]
+      `SELECT wb.*, f.flat_no FROM water_bookings wb
+       LEFT JOIN flats f ON f.id = wb.flat_id
+       WHERE to_char(wb.booking_date, 'YYYY-MM') = $1
+       ORDER BY wb.booking_date, wb.id`, [month]
     );
     res.json(rows);
   } catch (err) {
@@ -158,7 +159,7 @@ app.get('/api/water-bookings', async (req, res) => {
 });
 
 app.post('/api/water-bookings', async (req, res) => {
-  const { booking_date, type_of_load, price, litres } = req.body;
+  const { booking_date, type_of_load, price, litres, flat_id } = req.body;
   if (!booking_date || !type_of_load || litres === undefined) {
     return res.status(400).json({ error: 'booking_date, type_of_load, and litres are required' });
   }
@@ -170,9 +171,9 @@ app.post('/api/water-bookings', async (req, res) => {
   }
   try {
     const { rows } = await pool.query(
-      `INSERT INTO water_bookings (booking_date, type_of_load, price, litres)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [booking_date, type_of_load, price || 0, litres]
+      `INSERT INTO water_bookings (booking_date, type_of_load, price, litres, flat_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [booking_date, type_of_load, price || 0, litres, flat_id || null]
     );
     res.json(rows[0]);
   } catch (err) {

@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS water_bookings (
   created_at   TIMESTAMPTZ DEFAULT now()
 );
 
+-- Add flat_id to water_bookings (safe to re-run)
+ALTER TABLE water_bookings ADD COLUMN IF NOT EXISTS flat_id INTEGER REFERENCES flats(id);
+
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_meter_readings_month ON meter_readings(month);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(month);

@@ -55,12 +55,27 @@
             <input type="date" id="booking-date">
           </div>
           <div class="form-field">
+            <label>Flat</label>
+            <select id="booking-flat">
+              <option value="">— Select Flat —</option>
+            </select>
+          </div>
+          <div class="form-field">
             <label>Type of Load</label>
-            <input type="text" id="booking-type" placeholder="e.g. Metro, Tanker">
+            <select id="booking-type">
+              <option value="">— Select —</option>
+              <option value="Metro">Metro</option>
+              <option value="Private">Private</option>
+            </select>
           </div>
           <div class="form-field">
             <label>Litres</label>
-            <input type="number" id="booking-litres" placeholder="0" min="0">
+            <select id="booking-litres">
+              <option value="">— Select —</option>
+              <option value="9000">9,000 L</option>
+              <option value="12000">12,000 L</option>
+              <option value="18000">18,000 L</option>
+            </select>
           </div>
           <div class="form-field">
             <label>Price (₹)</label>

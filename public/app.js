@@ -67,7 +67,14 @@ function clearError() {
 async function ensureFlats() {
   if (flats.length === 0) {
     flats = await apiFetch(`${API}/api/flats`);
+    populateFlatDropdown();
   }
+}
+
+function populateFlatDropdown() {
+  const sel = document.getElementById('booking-flat');
+  sel.innerHTML = '<option value="">— Select Flat —</option>' +
+    flats.map(f => `<option value="${f.id}">${f.flat_no}</option>`).join('');
 }
 
 // ── Main loader ─────────────────────────────────
@@ -96,20 +103,21 @@ async function loadBookings(month) {
 
 async function addBooking() {
   const booking_date = document.getElementById('booking-date').value;
-  const type_of_load = document.getElementById('booking-type').value.trim();
+  const flat_id      = document.getElementById('booking-flat').value   || null;
+  const type_of_load = document.getElementById('booking-type').value;
   const litres       = Number(document.getElementById('booking-litres').value || 0);
   const price        = Number(document.getElementById('booking-price').value  || 0);
 
   if (!booking_date || !type_of_load || !litres) return;
   clearError();
   try {
-    if (litres <= 0) throw new Error('Litres must be greater than zero');
-    if (price  <  0) throw new Error('Price cannot be negative');
+    if (price < 0) throw new Error('Price cannot be negative');
     await apiFetch(`${API}/api/water-bookings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ booking_date, type_of_load, price, litres })
+      body: JSON.stringify({ booking_date, type_of_load, price, litres, flat_id: flat_id ? Number(flat_id) : null })
     });
+    document.getElementById('booking-flat').value   = '';
     document.getElementById('booking-type').value   = '';
     document.getElementById('booking-litres').value = '';
     document.getElementById('booking-price').value  = '';
@@ -136,6 +144,7 @@ function renderBookings(bookings) {
       <thead><tr>
         <th>Si.No</th>
         <th>Date of Booking</th>
+        <th>Flat</th>
         <th>Type of Load</th>
         <th>Price</th>
         <th>Litres</th>
@@ -145,6 +154,7 @@ function renderBookings(bookings) {
           <tr>
             <td>${i + 1}</td>
             <td>${new Date(b.booking_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td>${b.flat_no ? `<strong>${b.flat_no}</strong>` : '<span style="color:var(--text-secondary)">—</span>'}</td>
             <td><span class="load-badge">${b.type_of_load}</span></td>
             <td>₹${Number(b.price).toLocaleString('en-IN')}</td>
             <td>${Number(b.litres).toLocaleString('en-IN')} L</td>
@@ -152,7 +162,7 @@ function renderBookings(bookings) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3">Total</td>
+          <td colspan="4">Total</td>
           <td>₹${totalPrice.toLocaleString('en-IN')}</td>
           <td>${totalLitres.toLocaleString('en-IN')} L</td>
         </tr>
