@@ -67,14 +67,17 @@ function clearError() {
 async function ensureFlats() {
   if (flats.length === 0) {
     flats = await apiFetch(`${API}/api/flats`);
-    populateFlatDropdown();
   }
+  populateFlatDropdown();
 }
 
 function populateFlatDropdown() {
   const sel = document.getElementById('booking-flat');
+  if (!sel || flats.length === 0) return;
+  const current = sel.value;
   sel.innerHTML = '<option value="">— Select Flat —</option>' +
     flats.map(f => `<option value="${f.id}">${f.flat_no}</option>`).join('');
+  sel.value = current; // preserve selection if re-populating
 }
 
 // ── Main loader ─────────────────────────────────
