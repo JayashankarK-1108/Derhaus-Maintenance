@@ -139,6 +139,48 @@ app.post('/api/expenses', async (req, res) => {
   }
 });
 
+// --- Water bookings (individual deliveries) ---
+app.get('/api/water-bookings', async (req, res) => {
+  const { month } = req.query;
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM water_bookings
+       WHERE to_char(booking_date, 'YYYY-MM') = $1
+       ORDER BY booking_date, id`, [month]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to load water bookings' });
+  }
+});
+
+app.post('/api/water-bookings', async (req, res) => {
+  const { booking_date, type_of_load, price, litres } = req.body;
+  if (!booking_date || !type_of_load || litres === undefined) {
+    return res.status(400).json({ error: 'booking_date, type_of_load, and litres are required' });
+  }
+  if (Number(litres) <= 0) {
+    return res.status(400).json({ error: 'litres must be greater than zero' });
+  }
+  if (price !== undefined && Number(price) < 0) {
+    return res.status(400).json({ error: 'price cannot be negative' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO water_bookings (booking_date, type_of_load, price, litres)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [booking_date, type_of_load, price || 0, litres]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to add water booking' });
+  }
+});
+
 // --- Computed bill (the reconciliation table) ---
 app.get('/api/bill', async (req, res) => {
   const { month } = req.query;

@@ -8,11 +8,29 @@ function currentMonthStr() {
 const monthInput = document.getElementById('month');
 monthInput.value = currentMonthStr();
 
-document.getElementById('load-btn').addEventListener('click', loadAll);
-document.getElementById('save-supply-btn').addEventListener('click', saveSupply);
-document.getElementById('add-expense-btn').addEventListener('click', addExpense);
+// Default booking date to today
+document.getElementById('booking-date').value = new Date().toISOString().split('T')[0];
 
 let flats = [];
+let activeTab = 'bookings';
+
+// --- Tab switching ---
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = true; });
+    document.getElementById(`tab-${activeTab}`).hidden = false;
+    loadAll();
+  });
+});
+
+document.getElementById('load-btn').addEventListener('click', loadAll);
+document.getElementById('add-booking-btn').addEventListener('click', addBooking);
+document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
+
+// --- Helpers ---
 
 async function apiFetch(url, opts) {
   const r = await fetch(url, opts);
@@ -35,59 +53,146 @@ function clearError() {
   el.textContent = '';
 }
 
+async function ensureFlats() {
+  if (flats.length === 0) {
+    flats = await apiFetch(`${API}/api/flats`);
+  }
+}
+
+// --- Main loader ---
+
 async function loadAll() {
   const month = monthInput.value;
   if (!month) return;
   clearError();
   try {
-    if (flats.length === 0) {
-      flats = await apiFetch(`${API}/api/flats`);
-      renderReadingsForm();
-    }
-    const [readings, expenses, bill] = await Promise.all([
-      apiFetch(`${API}/api/readings?month=${month}`),
-      apiFetch(`${API}/api/expenses?month=${month}`),
-      apiFetch(`${API}/api/bill?month=${month}`)
-    ]);
-    fillReadingValues(readings);
-    renderExpenses(expenses);
-    renderBill(bill);
-    renderSummary(bill);
+    await ensureFlats();
+    if (activeTab === 'bookings') await loadBookings(month);
+    if (activeTab === 'flats')    await loadFlatDetails(month);
+    if (activeTab === 'usage')    await loadUsage(month);
   } catch (err) {
     showError(err.message || 'Failed to load data. Check your connection.');
   }
 }
 
-function renderReadingsForm() {
-  const el = document.getElementById('readings-form');
-  el.innerHTML = `<div class="readings-grid">${flats.map(f => `
-    <div>
-      <label>${f.flat_no}</label>
-      <input type="number" data-flat-id="${f.id}" placeholder="units" min="0">
-    </div>`).join('')}</div>
-    <button style="margin-top:10px" id="save-readings-btn">Save readings</button>`;
-  document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
+// ─────────────────────────────────────────────
+// Tab 1 — Water Bookings
+// ─────────────────────────────────────────────
+
+async function loadBookings(month) {
+  const bookings = await apiFetch(`${API}/api/water-bookings?month=${month}`);
+  renderBookings(bookings);
 }
 
-function fillReadingValues(readings) {
+async function addBooking() {
+  const booking_date  = document.getElementById('booking-date').value;
+  const type_of_load  = document.getElementById('booking-type').value.trim();
+  const litres        = Number(document.getElementById('booking-litres').value || 0);
+  const price         = Number(document.getElementById('booking-price').value || 0);
+
+  if (!booking_date || !type_of_load || !litres) return;
+  clearError();
+  try {
+    if (litres <= 0) throw new Error('Litres must be greater than zero');
+    if (price < 0)   throw new Error('Price cannot be negative');
+    await apiFetch(`${API}/api/water-bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_date, type_of_load, price, litres })
+    });
+    document.getElementById('booking-type').value   = '';
+    document.getElementById('booking-litres').value = '';
+    document.getElementById('booking-price').value  = '';
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to add booking.');
+  }
+}
+
+function renderBookings(bookings) {
+  const el = document.getElementById('bookings-table');
+  if (bookings.length === 0) {
+    el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">No bookings for this month.</p>';
+    return;
+  }
+  const totalLitres = bookings.reduce((s, b) => s + Number(b.litres), 0);
+  const totalPrice  = bookings.reduce((s, b) => s + Number(b.price),  0);
+  el.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Si.No</th>
+        <th>Date of Booking</th>
+        <th>Type of Load</th>
+        <th>Price</th>
+        <th>Litres</th>
+      </tr></thead>
+      <tbody>
+        ${bookings.map((b, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${new Date(b.booking_date).toLocaleDateString('en-IN')}</td>
+            <td>${b.type_of_load}</td>
+            <td>₹${Number(b.price).toLocaleString('en-IN')}</td>
+            <td>${Number(b.litres).toLocaleString('en-IN')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3">Total</td>
+          <td>₹${totalPrice.toLocaleString('en-IN')}</td>
+          <td>${totalLitres.toLocaleString('en-IN')}</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// Tab 2 — Flat Details
+// ─────────────────────────────────────────────
+
+async function loadFlatDetails(month) {
+  const readings = await apiFetch(`${API}/api/readings?month=${month}`);
+  renderFlatDetails(readings);
+}
+
+function renderFlatDetails(readings) {
   const byFlat = Object.fromEntries(readings.map(r => [r.flat_id, r.reading_units]));
-  el_all('input[data-flat-id]').forEach(inp => {
-    const val = byFlat[inp.dataset.flatId];
-    inp.value = val !== undefined ? val : '';
-  });
+  const el = document.getElementById('flats-table');
+  el.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Flat ID</th>
+        <th>Owner Name</th>
+        <th>Current Reading (units)</th>
+      </tr></thead>
+      <tbody>
+        ${flats.map(f => `
+          <tr>
+            <td>${f.flat_no}</td>
+            <td>${f.owner_name || '—'}</td>
+            <td>
+              <input type="number" data-flat-id="${f.id}"
+                value="${byFlat[f.id] !== undefined ? byFlat[f.id] : ''}"
+                placeholder="units" min="0" style="width:100px">
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
 }
-
-function el_all(sel) { return Array.from(document.querySelectorAll(sel)); }
 
 async function saveReadings() {
-  const month = monthInput.value;
-  const inputs = el_all('input[data-flat-id]');
+  const month  = monthInput.value;
+  const inputs = Array.from(document.querySelectorAll('input[data-flat-id]'));
   clearError();
   try {
     for (const inp of inputs) {
       if (inp.value === '') continue;
       const val = Number(inp.value);
-      if (val < 0) throw new Error('Meter readings cannot be negative');
+      if (val < 0) throw new Error('Readings cannot be negative');
       await apiFetch(`${API}/api/readings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,58 +205,19 @@ async function saveReadings() {
   }
 }
 
-async function saveSupply() {
-  const month = monthInput.value;
-  const total_received_litres = Number(document.getElementById('water-received').value || 0);
-  const water_bill_amount = Number(document.getElementById('water-bill-amount').value || 0);
-  clearError();
-  try {
-    if (total_received_litres < 0) throw new Error('Total received litres cannot be negative');
-    if (water_bill_amount < 0) throw new Error('Water bill amount cannot be negative');
-    await apiFetch(`${API}/api/water-supply`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ month, total_received_litres, water_bill_amount })
-    });
-    await loadAll();
-  } catch (err) {
-    showError(err.message || 'Failed to save water supply.');
-  }
-}
+// ─────────────────────────────────────────────
+// Tab 3 — Water Usage
+// ─────────────────────────────────────────────
 
-async function addExpense() {
-  const month = monthInput.value;
-  const category = document.getElementById('exp-category').value.trim();
-  const amount = Number(document.getElementById('exp-amount').value || 0);
-  if (!category || !amount) return;
-  clearError();
-  try {
-    if (amount <= 0) throw new Error('Expense amount must be greater than zero');
-    await apiFetch(`${API}/api/expenses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ month, category, amount })
-    });
-    document.getElementById('exp-category').value = '';
-    document.getElementById('exp-amount').value = '';
-    await loadAll();
-  } catch (err) {
-    showError(err.message || 'Failed to add expense.');
-  }
-}
-
-function renderExpenses(expenses) {
-  const el = document.getElementById('expenses-list');
-  if (expenses.length === 0) { el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">No expenses added yet.</p>'; return; }
-  el.innerHTML = expenses.map(e => `
-    <div class="expense-row"><span>${e.category}</span><span>₹${Number(e.amount).toLocaleString('en-IN')}</span></div>
-  `).join('');
+async function loadUsage(month) {
+  const bill = await apiFetch(`${API}/api/bill?month=${month}`);
+  renderSummary(bill);
+  renderUsage(bill);
 }
 
 function renderSummary(bill) {
-  const el = document.getElementById('summary-cards');
   const discClass = bill.discrepancy_litres > 0 ? 'warning' : '';
-  el.innerHTML = `
+  document.getElementById('summary-cards').innerHTML = `
     <div class="card"><div class="label">Total metered</div><div class="value">${Math.round(bill.total_metered_litres).toLocaleString('en-IN')} L</div></div>
     <div class="card"><div class="label">Total received</div><div class="value">${Math.round(bill.total_received_litres).toLocaleString('en-IN')} L</div></div>
     <div class="card ${discClass}"><div class="label">Discrepancy</div><div class="value">${Math.round(bill.discrepancy_litres).toLocaleString('en-IN')} L</div></div>
@@ -159,38 +225,36 @@ function renderSummary(bill) {
   `;
 }
 
-async function togglePaid(flatId, month, amount, paid) {
-  clearError();
-  try {
-    await apiFetch(`${API}/api/payments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ flat_id: flatId, month, amount_due: amount, paid: !paid })
-    });
-    await loadAll();
-  } catch (err) {
-    showError(err.message || 'Failed to update payment.');
+function renderUsage(bill) {
+  const el = document.getElementById('usage-table');
+  if (!bill.flats || bill.flats.length === 0) {
+    el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">No data for this month.</p>';
+    return;
   }
-}
-window.togglePaid = togglePaid;
-
-function renderBill(bill) {
-  const el = document.getElementById('bill-table');
+  const totalUsageL = Math.round(bill.total_metered_litres).toLocaleString('en-IN');
   el.innerHTML = `
     <table>
       <thead><tr>
-        <th>Flat</th><th>Units</th><th>Share</th><th>Adjusted L</th><th>Water ₹</th><th>Equal ₹</th><th>Total ₹</th>
+        <th>Flat ID</th>
+        <th>Owner Name</th>
+        <th>Prev Reading</th>
+        <th>Curr Reading</th>
+        <th>Usage (units)</th>
+        <th>% Usage</th>
+        <th>Total Usage (L)</th>
+        <th>Price (₹)</th>
       </tr></thead>
       <tbody>
         ${bill.flats.map(f => `
           <tr>
             <td>${f.flat_no}</td>
+            <td>${f.owner_name || '—'}</td>
+            <td>${f.prev_reading ?? '—'}</td>
+            <td>${f.cur_reading  ?? '—'}</td>
             <td>${f.units}</td>
             <td>${f.pct}%</td>
-            <td>${f.adjusted_litres.toLocaleString('en-IN')}</td>
+            <td>${totalUsageL}</td>
             <td>₹${f.water_charge.toLocaleString('en-IN')}</td>
-            <td>₹${f.equal_share.toLocaleString('en-IN')}</td>
-            <td>₹${f.total_due.toLocaleString('en-IN')}</td>
           </tr>
         `).join('')}
       </tbody>

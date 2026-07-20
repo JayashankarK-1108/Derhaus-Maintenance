@@ -60,7 +60,18 @@ INSERT INTO flats (flat_no, owner_name, upi_id) VALUES
   ('Flat B4','',''),('Flat B5','',''),('Flat B6','','')
 ON CONFLICT (flat_no) DO NOTHING;
 
+-- Individual water delivery bookings (replaces manual water_supply entry)
+CREATE TABLE IF NOT EXISTS water_bookings (
+  id           SERIAL PRIMARY KEY,
+  booking_date DATE NOT NULL,
+  type_of_load TEXT NOT NULL,
+  price        NUMERIC NOT NULL DEFAULT 0,
+  litres       NUMERIC NOT NULL,
+  created_at   TIMESTAMPTZ DEFAULT now()
+);
+
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_meter_readings_month ON meter_readings(month);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(month);
 CREATE INDEX IF NOT EXISTS idx_payments_month ON payments(month);
+CREATE INDEX IF NOT EXISTS idx_water_bookings_date ON water_bookings(booking_date);

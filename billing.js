@@ -2,7 +2,7 @@ const pool = require('./db');
 
 function prevMonth(month) {
   const [y, m] = month.split('-').map(Number);
-  const d = new Date(Date.UTC(y, m - 2, 1)); // m-1 is this month (0-indexed), -1 more for prev
+  const d = new Date(Date.UTC(y, m - 2, 1));
   const py = d.getUTCFullYear();
   const pm = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${py}-${pm}`;
@@ -23,10 +23,13 @@ async function computeBill(month) {
   const curMap = Object.fromEntries(currentReadings.map(r => [r.flat_id, Number(r.reading_units)]));
   const prevMap = Object.fromEntries(priorReadings.map(r => [r.flat_id, Number(r.reading_units)]));
 
-  const { rows: supplyRows } = await pool.query(
-    'SELECT total_received_litres, water_bill_amount FROM water_supply WHERE month = $1', [month]
+  // Aggregate total received litres and bill amount from individual water bookings
+  const { rows: [supply] } = await pool.query(
+    `SELECT COALESCE(SUM(litres), 0) AS total_received_litres,
+            COALESCE(SUM(price), 0)  AS water_bill_amount
+     FROM water_bookings
+     WHERE to_char(booking_date, 'YYYY-MM') = $1`, [month]
   );
-  const supply = supplyRows[0] || { total_received_litres: 0, water_bill_amount: 0 };
 
   const { rows: expenseRows } = await pool.query(
     "SELECT amount FROM expenses WHERE month = $1 AND split_type = 'equal'", [month]
@@ -34,12 +37,11 @@ async function computeBill(month) {
   const totalEqualExpenses = expenseRows.reduce((s, r) => s + Number(r.amount), 0);
   const equalShare = flats.length ? totalEqualExpenses / flats.length : 0;
 
-  // Consumption per flat, in units, defaulting to 0 if a reading is missing.
   const consumption = flats.map(f => {
     const cur = curMap[f.id];
     const prev = prevMap[f.id];
     const units = (cur !== undefined && prev !== undefined) ? Math.max(0, cur - prev) : 0;
-    return { flat: f, units };
+    return { flat: f, units, cur, prev };
   });
 
   const totalUnits = consumption.reduce((s, c) => s + c.units, 0);
@@ -48,18 +50,20 @@ async function computeBill(month) {
   const discrepancyLitres = totalReceivedLitres - totalMeteredLitres;
   const waterBillAmount = Number(supply.water_bill_amount) || 0;
 
-  const bill = consumption.map(({ flat, units }) => {
+  const bill = consumption.map(({ flat, units, cur, prev }) => {
     const pct = totalUnits > 0 ? units / totalUnits : 0;
     const meteredLitres = units * 1000;
     const discrepancyShareLitres = pct * discrepancyLitres;
     const adjustedLitres = meteredLitres + discrepancyShareLitres;
-    const waterCharge = pct * waterBillAmount; // billed proportional to usage share
+    const waterCharge = pct * waterBillAmount;
     const totalDue = waterCharge + equalShare;
 
     return {
       flat_id: flat.id,
       flat_no: flat.flat_no,
       owner_name: flat.owner_name,
+      prev_reading: prev ?? null,
+      cur_reading: cur ?? null,
       units,
       pct: Number((pct * 100).toFixed(2)),
       metered_litres: Math.round(meteredLitres),
