@@ -64,11 +64,23 @@ function clearError() {
   el.textContent = '';
 }
 
+// Load flats immediately on page load — runs independently of loadAll
+fetch(`${API}/api/flats`)
+  .then(r => r.json())
+  .then(data => {
+    flats = data;
+    populateFlatDropdown();
+  })
+  .catch(() => {
+    const sel = document.getElementById('booking-flat');
+    if (sel) sel.innerHTML = '<option value="">⚠ Could not load flats</option>';
+  });
+
 async function ensureFlats() {
   if (flats.length === 0) {
     flats = await apiFetch(`${API}/api/flats`);
+    populateFlatDropdown();
   }
-  populateFlatDropdown();
 }
 
 function populateFlatDropdown() {
@@ -77,7 +89,7 @@ function populateFlatDropdown() {
   const current = sel.value;
   sel.innerHTML = '<option value="">— Select Flat —</option>' +
     flats.map(f => `<option value="${f.id}">${f.flat_no}</option>`).join('');
-  sel.value = current; // preserve selection if re-populating
+  if (current) sel.value = current;
 }
 
 // ── Main loader ─────────────────────────────────
