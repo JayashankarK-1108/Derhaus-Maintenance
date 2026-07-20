@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: sunrise-apartments-maintenance
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NODE_VERSION
+        value: 18.20.4
