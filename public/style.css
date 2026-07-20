@@ -91,3 +91,13 @@ tfoot td { font-weight: 500; border-top: 1px solid var(--border); }
 .badge.pending { background: var(--danger-bg); color: var(--danger-text); cursor: pointer; }
 
 .expense-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 0.5px solid var(--border); font-size: 14px; }
+
+#error-banner {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border: 0.5px solid #e8b4b4;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}

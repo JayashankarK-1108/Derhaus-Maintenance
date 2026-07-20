@@ -58,3 +58,8 @@ INSERT INTO flats (flat_no, owner_name, upi_id) VALUES
   ('B1','',''),('B2','',''),('B3','',''),('B4','',''),
   ('C1','',''),('C2','',''),('C3','',''),('C4','','')
 ON CONFLICT (flat_no) DO NOTHING;
+
+-- Indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_meter_readings_month ON meter_readings(month);
+CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(month);
+CREATE INDEX IF NOT EXISTS idx_payments_month ON payments(month);

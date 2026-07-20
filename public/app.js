@@ -14,25 +14,48 @@ document.getElementById('add-expense-btn').addEventListener('click', addExpense)
 
 let flats = [];
 
+async function apiFetch(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `Request failed (${r.status})`);
+  }
+  return r.json();
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+function clearError() {
+  const el = document.getElementById('error-banner');
+  el.hidden = true;
+  el.textContent = '';
+}
+
 async function loadAll() {
   const month = monthInput.value;
   if (!month) return;
-
-  if (flats.length === 0) {
-    flats = await fetch(`${API}/api/flats`).then(r => r.json());
-    renderReadingsForm();
+  clearError();
+  try {
+    if (flats.length === 0) {
+      flats = await apiFetch(`${API}/api/flats`);
+      renderReadingsForm();
+    }
+    const [readings, expenses, bill] = await Promise.all([
+      apiFetch(`${API}/api/readings?month=${month}`),
+      apiFetch(`${API}/api/expenses?month=${month}`),
+      apiFetch(`${API}/api/bill?month=${month}`)
+    ]);
+    fillReadingValues(readings);
+    renderExpenses(expenses);
+    renderBill(bill);
+    renderSummary(bill);
+  } catch (err) {
+    showError(err.message || 'Failed to load data. Check your connection.');
   }
-
-  const [readings, expenses, bill] = await Promise.all([
-    fetch(`${API}/api/readings?month=${month}`).then(r => r.json()),
-    fetch(`${API}/api/expenses?month=${month}`).then(r => r.json()),
-    fetch(`${API}/api/bill?month=${month}`).then(r => r.json())
-  ]);
-
-  fillReadingValues(readings);
-  renderExpenses(expenses);
-  renderBill(bill);
-  renderSummary(bill);
 }
 
 function renderReadingsForm() {
@@ -40,7 +63,7 @@ function renderReadingsForm() {
   el.innerHTML = `<div class="readings-grid">${flats.map(f => `
     <div>
       <label>${f.flat_no}</label>
-      <input type="number" data-flat-id="${f.id}" placeholder="units">
+      <input type="number" data-flat-id="${f.id}" placeholder="units" min="0">
     </div>`).join('')}</div>
     <button style="margin-top:10px" id="save-readings-btn">Save readings</button>`;
   document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
@@ -59,27 +82,41 @@ function el_all(sel) { return Array.from(document.querySelectorAll(sel)); }
 async function saveReadings() {
   const month = monthInput.value;
   const inputs = el_all('input[data-flat-id]');
-  for (const inp of inputs) {
-    if (inp.value === '') continue;
-    await fetch(`${API}/api/readings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ flat_id: Number(inp.dataset.flatId), month, reading_units: Number(inp.value) })
-    });
+  clearError();
+  try {
+    for (const inp of inputs) {
+      if (inp.value === '') continue;
+      const val = Number(inp.value);
+      if (val < 0) throw new Error('Meter readings cannot be negative');
+      await apiFetch(`${API}/api/readings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flat_id: Number(inp.dataset.flatId), month, reading_units: val })
+      });
+    }
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to save readings.');
   }
-  loadAll();
 }
 
 async function saveSupply() {
   const month = monthInput.value;
   const total_received_litres = Number(document.getElementById('water-received').value || 0);
   const water_bill_amount = Number(document.getElementById('water-bill-amount').value || 0);
-  await fetch(`${API}/api/water-supply`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ month, total_received_litres, water_bill_amount })
-  });
-  loadAll();
+  clearError();
+  try {
+    if (total_received_litres < 0) throw new Error('Total received litres cannot be negative');
+    if (water_bill_amount < 0) throw new Error('Water bill amount cannot be negative');
+    await apiFetch(`${API}/api/water-supply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, total_received_litres, water_bill_amount })
+    });
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to save water supply.');
+  }
 }
 
 async function addExpense() {
@@ -87,14 +124,20 @@ async function addExpense() {
   const category = document.getElementById('exp-category').value.trim();
   const amount = Number(document.getElementById('exp-amount').value || 0);
   if (!category || !amount) return;
-  await fetch(`${API}/api/expenses`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ month, category, amount })
-  });
-  document.getElementById('exp-category').value = '';
-  document.getElementById('exp-amount').value = '';
-  loadAll();
+  clearError();
+  try {
+    if (amount <= 0) throw new Error('Expense amount must be greater than zero');
+    await apiFetch(`${API}/api/expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, category, amount })
+    });
+    document.getElementById('exp-category').value = '';
+    document.getElementById('exp-amount').value = '';
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to add expense.');
+  }
 }
 
 function renderExpenses(expenses) {
@@ -117,12 +160,17 @@ function renderSummary(bill) {
 }
 
 async function togglePaid(flatId, month, amount, paid) {
-  await fetch(`${API}/api/payments`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ flat_id: flatId, month, amount_due: amount, paid: !paid })
-  });
-  loadAll();
+  clearError();
+  try {
+    await apiFetch(`${API}/api/payments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flat_id: flatId, month, amount_due: amount, paid: !paid })
+    });
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to update payment.');
+  }
 }
 window.togglePaid = togglePaid;
 
