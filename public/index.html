@@ -3,62 +3,101 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sunrise Apartments — Maintenance</title>
+<title>Derhaus — Apartment Maintenance</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>Sunrise Apartments</h1>
+
+  <header class="site-header">
+    <div class="header-top">
+      <div class="logo">
+        <span class="logo-icon">🏢</span>
+        <div>
+          <div class="logo-text">Derhaus</div>
+          <div class="logo-sub">Apartment Maintenance</div>
+        </div>
+      </div>
       <div class="month-picker">
         <label for="month">Month</label>
         <input type="month" id="month">
-        <button id="load-btn">Load</button>
+        <button id="load-btn" class="btn-load">Load</button>
       </div>
-    </header>
+    </div>
+    <nav class="header-nav">
+      <button class="tab active" data-tab="bookings">
+        <span class="tab-icon">💧</span> Water Bookings
+      </button>
+      <button class="tab" data-tab="flats">
+        <span class="tab-icon">🏠</span> Flat Details
+      </button>
+      <button class="tab" data-tab="usage">
+        <span class="tab-icon">📊</span> Water Usage
+      </button>
+    </nav>
+  </header>
 
+  <div class="wrap">
     <div id="error-banner" hidden role="alert"></div>
 
-    <nav class="tabs">
-      <button class="tab active" data-tab="bookings">Water Bookings</button>
-      <button class="tab" data-tab="flats">Flat Details</button>
-      <button class="tab" data-tab="usage">Water Usage</button>
-    </nav>
+    <div class="page-intro">
+      <h2 id="page-title">💧 Water <span class="accent">Bookings</span></h2>
+      <p id="page-subtitle">Track water deliveries for the month</p>
+    </div>
 
-    <!-- Tab 1: Water Bookings -->
+    <!-- ── Tab 1: Water Bookings ───────────────── -->
     <div id="tab-bookings" class="tab-panel">
+
       <div class="panel">
-        <h2>Add Booking</h2>
-        <div class="row">
-          <input type="date" id="booking-date">
-          <input type="text" id="booking-type" placeholder="Type of load (e.g. Metro)">
-          <input type="number" id="booking-litres" placeholder="Litres" min="0">
-          <input type="number" id="booking-price" placeholder="Price ₹" min="0">
-          <button id="add-booking-btn">Add</button>
+        <div class="panel-title"><span>➕</span> Add Booking</div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Date</label>
+            <input type="date" id="booking-date">
+          </div>
+          <div class="form-field">
+            <label>Type of Load</label>
+            <input type="text" id="booking-type" placeholder="e.g. Metro, Tanker">
+          </div>
+          <div class="form-field">
+            <label>Litres</label>
+            <input type="number" id="booking-litres" placeholder="0" min="0">
+          </div>
+          <div class="form-field">
+            <label>Price (₹)</label>
+            <input type="number" id="booking-price" placeholder="0" min="0">
+          </div>
+          <button id="add-booking-btn" class="btn-primary">Add Booking</button>
         </div>
       </div>
+
       <div class="panel">
-        <h2>Bookings this month</h2>
+        <div class="panel-title"><span>📋</span> Bookings this month</div>
         <div id="bookings-table"></div>
       </div>
+
     </div>
 
-    <!-- Tab 2: Flat Details -->
+    <!-- ── Tab 2: Flat Details ─────────────────── -->
     <div id="tab-flats" class="tab-panel" hidden>
+
       <div class="panel">
-        <h2>Flat Details</h2>
+        <div class="panel-title"><span>🔢</span> Current Meter Readings</div>
         <div id="flats-table"></div>
-        <button id="save-readings-btn" style="margin-top:14px">Save Readings</button>
+        <button id="save-readings-btn" class="btn-secondary">Save Readings</button>
       </div>
+
     </div>
 
-    <!-- Tab 3: Water Usage -->
+    <!-- ── Tab 3: Water Usage ──────────────────── -->
     <div id="tab-usage" class="tab-panel" hidden>
+
       <section class="cards" id="summary-cards"></section>
+
       <div class="panel">
-        <h2>Water Usage</h2>
+        <div class="panel-title"><span>💦</span> Per-Flat Breakdown</div>
         <div id="usage-table"></div>
       </div>
+
     </div>
   </div>
 

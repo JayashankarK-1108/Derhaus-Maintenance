@@ -8,13 +8,25 @@ function currentMonthStr() {
 const monthInput = document.getElementById('month');
 monthInput.value = currentMonthStr();
 
-// Default booking date to today
 document.getElementById('booking-date').value = new Date().toISOString().split('T')[0];
 
 let flats = [];
 let activeTab = 'bookings';
 
-// --- Tab switching ---
+const TAB_META = {
+  bookings: { icon: '💧', title: 'Water', accent: 'Bookings',   sub: 'Track water deliveries for the month' },
+  flats:    { icon: '🏠', title: 'Flat',  accent: 'Details',    sub: 'View and update meter readings per flat' },
+  usage:    { icon: '📊', title: 'Water', accent: 'Usage',      sub: 'Consumption breakdown and billing' }
+};
+
+function updateIntro() {
+  const m = TAB_META[activeTab];
+  document.getElementById('page-title').innerHTML =
+    `${m.icon} ${m.title} <span class="accent">${m.accent}</span>`;
+  document.getElementById('page-subtitle').textContent = m.sub;
+}
+
+// ── Tab switching ───────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     activeTab = btn.dataset.tab;
@@ -22,6 +34,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.add('active');
     document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = true; });
     document.getElementById(`tab-${activeTab}`).hidden = false;
+    updateIntro();
     loadAll();
   });
 });
@@ -30,8 +43,7 @@ document.getElementById('load-btn').addEventListener('click', loadAll);
 document.getElementById('add-booking-btn').addEventListener('click', addBooking);
 document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
 
-// --- Helpers ---
-
+// ── Helpers ─────────────────────────────────────
 async function apiFetch(url, opts) {
   const r = await fetch(url, opts);
   if (!r.ok) {
@@ -46,7 +58,6 @@ function showError(msg) {
   el.textContent = msg;
   el.hidden = false;
 }
-
 function clearError() {
   const el = document.getElementById('error-banner');
   el.hidden = true;
@@ -59,8 +70,7 @@ async function ensureFlats() {
   }
 }
 
-// --- Main loader ---
-
+// ── Main loader ─────────────────────────────────
 async function loadAll() {
   const month = monthInput.value;
   if (!month) return;
@@ -75,9 +85,9 @@ async function loadAll() {
   }
 }
 
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────────
 // Tab 1 — Water Bookings
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────────
 
 async function loadBookings(month) {
   const bookings = await apiFetch(`${API}/api/water-bookings?month=${month}`);
@@ -85,16 +95,16 @@ async function loadBookings(month) {
 }
 
 async function addBooking() {
-  const booking_date  = document.getElementById('booking-date').value;
-  const type_of_load  = document.getElementById('booking-type').value.trim();
-  const litres        = Number(document.getElementById('booking-litres').value || 0);
-  const price         = Number(document.getElementById('booking-price').value || 0);
+  const booking_date = document.getElementById('booking-date').value;
+  const type_of_load = document.getElementById('booking-type').value.trim();
+  const litres       = Number(document.getElementById('booking-litres').value || 0);
+  const price        = Number(document.getElementById('booking-price').value  || 0);
 
   if (!booking_date || !type_of_load || !litres) return;
   clearError();
   try {
     if (litres <= 0) throw new Error('Litres must be greater than zero');
-    if (price < 0)   throw new Error('Price cannot be negative');
+    if (price  <  0) throw new Error('Price cannot be negative');
     await apiFetch(`${API}/api/water-bookings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -112,7 +122,11 @@ async function addBooking() {
 function renderBookings(bookings) {
   const el = document.getElementById('bookings-table');
   if (bookings.length === 0) {
-    el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">No bookings for this month.</p>';
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">💧</div>
+        <p>No water bookings for this month yet.</p>
+      </div>`;
     return;
   }
   const totalLitres = bookings.reduce((s, b) => s + Number(b.litres), 0);
@@ -130,27 +144,25 @@ function renderBookings(bookings) {
         ${bookings.map((b, i) => `
           <tr>
             <td>${i + 1}</td>
-            <td>${new Date(b.booking_date).toLocaleDateString('en-IN')}</td>
-            <td>${b.type_of_load}</td>
+            <td>${new Date(b.booking_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td><span class="load-badge">${b.type_of_load}</span></td>
             <td>₹${Number(b.price).toLocaleString('en-IN')}</td>
-            <td>${Number(b.litres).toLocaleString('en-IN')}</td>
-          </tr>
-        `).join('')}
+            <td>${Number(b.litres).toLocaleString('en-IN')} L</td>
+          </tr>`).join('')}
       </tbody>
       <tfoot>
         <tr>
           <td colspan="3">Total</td>
           <td>₹${totalPrice.toLocaleString('en-IN')}</td>
-          <td>${totalLitres.toLocaleString('en-IN')}</td>
+          <td>${totalLitres.toLocaleString('en-IN')} L</td>
         </tr>
       </tfoot>
-    </table>
-  `;
+    </table>`;
 }
 
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────────
 // Tab 2 — Flat Details
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────────
 
 async function loadFlatDetails(month) {
   const readings = await apiFetch(`${API}/api/readings?month=${month}`);
@@ -159,8 +171,7 @@ async function loadFlatDetails(month) {
 
 function renderFlatDetails(readings) {
   const byFlat = Object.fromEntries(readings.map(r => [r.flat_id, r.reading_units]));
-  const el = document.getElementById('flats-table');
-  el.innerHTML = `
+  document.getElementById('flats-table').innerHTML = `
     <table>
       <thead><tr>
         <th>Flat ID</th>
@@ -170,18 +181,16 @@ function renderFlatDetails(readings) {
       <tbody>
         ${flats.map(f => `
           <tr>
-            <td>${f.flat_no}</td>
-            <td>${f.owner_name || '—'}</td>
+            <td><strong>${f.flat_no}</strong></td>
+            <td>${f.owner_name || '<span style="color:var(--text-secondary)">—</span>'}</td>
             <td>
-              <input type="number" data-flat-id="${f.id}"
+              <input class="reading-input" type="number" data-flat-id="${f.id}"
                 value="${byFlat[f.id] !== undefined ? byFlat[f.id] : ''}"
-                placeholder="units" min="0" style="width:100px">
+                placeholder="Enter units" min="0">
             </td>
-          </tr>
-        `).join('')}
+          </tr>`).join('')}
       </tbody>
-    </table>
-  `;
+    </table>`;
 }
 
 async function saveReadings() {
@@ -205,9 +214,9 @@ async function saveReadings() {
   }
 }
 
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────────
 // Tab 3 — Water Usage
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────────
 
 async function loadUsage(month) {
   const bill = await apiFetch(`${API}/api/bill?month=${month}`);
@@ -218,17 +227,36 @@ async function loadUsage(month) {
 function renderSummary(bill) {
   const discClass = bill.discrepancy_litres > 0 ? 'warning' : '';
   document.getElementById('summary-cards').innerHTML = `
-    <div class="card"><div class="label">Total metered</div><div class="value">${Math.round(bill.total_metered_litres).toLocaleString('en-IN')} L</div></div>
-    <div class="card"><div class="label">Total received</div><div class="value">${Math.round(bill.total_received_litres).toLocaleString('en-IN')} L</div></div>
-    <div class="card ${discClass}"><div class="label">Discrepancy</div><div class="value">${Math.round(bill.discrepancy_litres).toLocaleString('en-IN')} L</div></div>
-    <div class="card"><div class="label">Equal share / flat</div><div class="value">₹${bill.equal_share.toLocaleString('en-IN')}</div></div>
-  `;
+    <div class="card">
+      <div class="card-icon">🔵</div>
+      <div class="label">Total Metered</div>
+      <div class="value">${Math.round(bill.total_metered_litres).toLocaleString('en-IN')} L</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🚰</div>
+      <div class="label">Total Received</div>
+      <div class="value">${Math.round(bill.total_received_litres).toLocaleString('en-IN')} L</div>
+    </div>
+    <div class="card ${discClass}">
+      <div class="card-icon">⚖️</div>
+      <div class="label">Discrepancy</div>
+      <div class="value">${Math.round(bill.discrepancy_litres).toLocaleString('en-IN')} L</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💰</div>
+      <div class="label">Equal Share / Flat</div>
+      <div class="value">₹${bill.equal_share.toLocaleString('en-IN')}</div>
+    </div>`;
 }
 
 function renderUsage(bill) {
   const el = document.getElementById('usage-table');
   if (!bill.flats || bill.flats.length === 0) {
-    el.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;">No data for this month.</p>';
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📊</div>
+        <p>No usage data for this month yet.</p>
+      </div>`;
     return;
   }
   const totalUsageL = Math.round(bill.total_metered_litres).toLocaleString('en-IN');
@@ -247,19 +275,18 @@ function renderUsage(bill) {
       <tbody>
         ${bill.flats.map(f => `
           <tr>
-            <td>${f.flat_no}</td>
-            <td>${f.owner_name || '—'}</td>
-            <td>${f.prev_reading ?? '—'}</td>
-            <td>${f.cur_reading  ?? '—'}</td>
+            <td><strong>${f.flat_no}</strong></td>
+            <td>${f.owner_name || '<span style="color:var(--text-secondary)">—</span>'}</td>
+            <td>${f.prev_reading ?? '<span style="color:var(--text-secondary)">—</span>'}</td>
+            <td>${f.cur_reading  ?? '<span style="color:var(--text-secondary)">—</span>'}</td>
             <td>${f.units}</td>
             <td>${f.pct}%</td>
             <td>${totalUsageL}</td>
             <td>₹${f.water_charge.toLocaleString('en-IN')}</td>
-          </tr>
-        `).join('')}
+          </tr>`).join('')}
       </tbody>
-    </table>
-  `;
+    </table>`;
 }
 
+updateIntro();
 loadAll();
