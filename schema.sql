@@ -54,9 +54,10 @@ CREATE TABLE IF NOT EXISTS payments (
 
 -- Seed the 12 flats (edit flat numbers/owners as needed)
 INSERT INTO flats (flat_no, owner_name, upi_id) VALUES
-  ('A1','',''),('A2','',''),('A3','',''),('A4','',''),
-  ('B1','',''),('B2','',''),('B3','',''),('B4','',''),
-  ('C1','',''),('C2','',''),('C3','',''),('C4','','')
+  ('Flat A1','',''),('Flat A2','',''),('Flat A3','',''),
+  ('Flat A4','',''),('Flat A5','',''),('Flat A6','',''),
+  ('Flat B1','',''),('Flat B2','',''),('Flat B3','',''),
+  ('Flat B4','',''),('Flat B5','',''),('Flat B6','','')
 ON CONFLICT (flat_no) DO NOTHING;
 
 -- Indexes for common query patterns
