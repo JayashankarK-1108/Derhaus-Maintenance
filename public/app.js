@@ -66,14 +66,19 @@ function clearError() {
 
 // Load flats immediately on page load — runs independently of loadAll
 fetch(`${API}/api/flats`)
-  .then(r => r.json())
+  .then(r => {
+    if (!r.ok) throw new Error(`Server error ${r.status}`);
+    return r.json();
+  })
   .then(data => {
+    if (!Array.isArray(data)) throw new Error('Unexpected response from server');
     flats = data;
     populateFlatDropdown();
   })
-  .catch(() => {
+  .catch(err => {
+    showError('Could not load flat list — ' + err.message + '. Make sure the server is running and DATABASE_URL is set.');
     const sel = document.getElementById('booking-flat');
-    if (sel) sel.innerHTML = '<option value="">⚠ Could not load flats</option>';
+    if (sel) sel.innerHTML = `<option value="">⚠ ${err.message}</option>`;
   });
 
 async function ensureFlats() {
