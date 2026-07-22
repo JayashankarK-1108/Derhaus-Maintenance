@@ -231,13 +231,19 @@ function renderFlatDetails(readings, prevReadings = []) {
           <tr>
             <td><strong>${f.flat_no}</strong></td>
             <td>${f.owner_name || dash}</td>
-            <td>${prev !== null ? prev : dash}</td>
+            <td>
+              <input class="reading-input" type="number" data-prev-flat-id="${f.id}"
+                value="${prev !== null ? prev : ''}"
+                placeholder="Enter prev" min="0"
+                oninput="recalcConsumed(${f.id})">
+            </td>
             <td>
               <input class="reading-input" type="number" data-flat-id="${f.id}"
                 value="${cur !== null ? cur : ''}"
-                placeholder="Enter units" min="0">
+                placeholder="Enter units" min="0"
+                oninput="recalcConsumed(${f.id})">
             </td>
-            <td>${consumed !== null
+            <td id="consumed-${f.id}">${consumed !== null
               ? `<span class="consumed-badge">${consumed} units</span>`
               : dash}</td>
           </tr>`;
@@ -246,12 +252,27 @@ function renderFlatDetails(readings, prevReadings = []) {
     </table>`;
 }
 
+// Live recalculate Water Consumed when either reading input changes
+window.recalcConsumed = function(flatId) {
+  const curInp  = document.querySelector(`input[data-flat-id="${flatId}"]`);
+  const prevInp = document.querySelector(`input[data-prev-flat-id="${flatId}"]`);
+  const el      = document.getElementById(`consumed-${flatId}`);
+  if (!curInp || !prevInp || !el) return;
+  const cur  = curInp.value  !== '' ? Number(curInp.value)  : null;
+  const prev = prevInp.value !== '' ? Number(prevInp.value) : null;
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+  el.innerHTML = (cur !== null && prev !== null)
+    ? `<span class="consumed-badge">${Math.max(0, cur - prev)} units</span>`
+    : dash;
+};
+
 async function saveReadings() {
-  const month  = monthInput.value;
-  const inputs = Array.from(document.querySelectorAll('input[data-flat-id]'));
+  const month = monthInput.value;
+  const prev  = prevMonthStr(month);
   clearError();
   try {
-    for (const inp of inputs) {
+    // Save current month readings
+    for (const inp of document.querySelectorAll('input[data-flat-id]')) {
       if (inp.value === '') continue;
       const val = Number(inp.value);
       if (val < 0) throw new Error('Readings cannot be negative');
@@ -259,6 +280,17 @@ async function saveReadings() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ flat_id: Number(inp.dataset.flatId), month, reading_units: val })
+      });
+    }
+    // Save previous month readings (stored in DB under the prior month)
+    for (const inp of document.querySelectorAll('input[data-prev-flat-id]')) {
+      if (inp.value === '') continue;
+      const val = Number(inp.value);
+      if (val < 0) throw new Error('Readings cannot be negative');
+      await apiFetch(`${API}/api/readings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flat_id: Number(inp.dataset.prevFlatId), month: prev, reading_units: val })
       });
     }
     await loadAll();
