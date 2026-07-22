@@ -5,6 +5,12 @@ function currentMonthStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function prevMonthStr(month) {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 const monthInput = document.getElementById('month');
 monthInput.value = currentMonthStr();
 
@@ -195,30 +201,47 @@ function renderBookings(bookings) {
 // ────────────────────────────────────────────────
 
 async function loadFlatDetails(month) {
-  const readings = await apiFetch(`${API}/api/readings?month=${month}`);
-  renderFlatDetails(readings);
+  const [readings, prevReadings] = await Promise.all([
+    apiFetch(`${API}/api/readings?month=${month}`),
+    apiFetch(`${API}/api/readings?month=${prevMonthStr(month)}`)
+  ]);
+  renderFlatDetails(readings, prevReadings);
 }
 
-function renderFlatDetails(readings) {
-  const byFlat = Object.fromEntries(readings.map(r => [r.flat_id, r.reading_units]));
+function renderFlatDetails(readings, prevReadings = []) {
+  const byFlat     = Object.fromEntries(readings.map(r => [r.flat_id, Number(r.reading_units)]));
+  const byFlatPrev = Object.fromEntries(prevReadings.map(r => [r.flat_id, Number(r.reading_units)]));
+
   document.getElementById('flats-table').innerHTML = `
     <table>
       <thead><tr>
         <th>Flat ID</th>
         <th>Owner Name</th>
+        <th>Previous Reading</th>
         <th>Current Reading (units)</th>
+        <th>Water Consumed</th>
       </tr></thead>
       <tbody>
-        ${flats.map(f => `
+        ${flats.map(f => {
+          const cur      = byFlat[f.id]     !== undefined ? byFlat[f.id]     : null;
+          const prev     = byFlatPrev[f.id] !== undefined ? byFlatPrev[f.id] : null;
+          const consumed = cur !== null && prev !== null ? Math.max(0, cur - prev) : null;
+          const dash     = `<span style="color:var(--text-secondary)">—</span>`;
+          return `
           <tr>
             <td><strong>${f.flat_no}</strong></td>
-            <td>${f.owner_name || '<span style="color:var(--text-secondary)">—</span>'}</td>
+            <td>${f.owner_name || dash}</td>
+            <td>${prev !== null ? prev : dash}</td>
             <td>
               <input class="reading-input" type="number" data-flat-id="${f.id}"
-                value="${byFlat[f.id] !== undefined ? byFlat[f.id] : ''}"
+                value="${cur !== null ? cur : ''}"
                 placeholder="Enter units" min="0">
             </td>
-          </tr>`).join('')}
+            <td>${consumed !== null
+              ? `<span class="consumed-badge">${consumed} units</span>`
+              : dash}</td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
 }

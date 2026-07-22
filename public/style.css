@@ -367,6 +367,18 @@ tfoot td {
   padding: 3px 12px;
 }
 
+/* Water consumed badge in flat details table */
+.consumed-badge {
+  display: inline-block;
+  background: var(--accent-light);
+  color: var(--accent-hover);
+  border: 1px solid #f0d898;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+}
+
 /* ── Empty state ──────────────────────────────── */
 .empty-state {
   text-align: center;
