@@ -175,6 +175,25 @@ app.post('/api/water-bookings', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [booking_date, type_of_load, price || 0, litres, flat_id || null]
     );
+
+    // Sync monthly aggregates (total litres, total price, price/litre) into water_supply
+    const month = booking_date.substring(0, 7);
+    await pool.query(
+      `INSERT INTO water_supply (month, total_received_litres, water_bill_amount, price_per_litre)
+       SELECT
+         $1,
+         COALESCE(SUM(litres), 0),
+         COALESCE(SUM(price), 0),
+         CASE WHEN SUM(litres) > 0 THEN ROUND(SUM(price)::NUMERIC / SUM(litres), 4) ELSE 0 END
+       FROM water_bookings
+       WHERE to_char(booking_date, 'YYYY-MM') = $1
+       ON CONFLICT (month) DO UPDATE SET
+         total_received_litres = EXCLUDED.total_received_litres,
+         water_bill_amount     = EXCLUDED.water_bill_amount,
+         price_per_litre       = EXCLUDED.price_per_litre`,
+      [month]
+    );
+
     res.json(rows[0]);
   } catch (err) {
     console.error(err);

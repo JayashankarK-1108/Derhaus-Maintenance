@@ -154,7 +154,30 @@ async function addBooking() {
 }
 
 function renderBookings(bookings) {
-  const el = document.getElementById('bookings-table');
+  const el      = document.getElementById('bookings-table');
+  const summary = document.getElementById('booking-summary');
+
+  const totalLitres    = bookings.reduce((s, b) => s + Number(b.litres), 0);
+  const totalPrice     = bookings.reduce((s, b) => s + Number(b.price),  0);
+  const pricePerLitre  = totalLitres > 0 ? (totalPrice / totalLitres) : 0;
+
+  summary.innerHTML = bookings.length === 0 ? '' : `
+    <div class="card">
+      <div class="card-icon">💧</div>
+      <div class="label">Total Litres</div>
+      <div class="value">${totalLitres.toLocaleString('en-IN')} L</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💰</div>
+      <div class="label">Total Price</div>
+      <div class="value">₹${totalPrice.toLocaleString('en-IN')}</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📐</div>
+      <div class="label">Price / Litre</div>
+      <div class="value">₹${pricePerLitre.toFixed(4)}</div>
+    </div>`;
+
   if (bookings.length === 0) {
     el.innerHTML = `
       <div class="empty-state">
@@ -163,8 +186,6 @@ function renderBookings(bookings) {
       </div>`;
     return;
   }
-  const totalLitres = bookings.reduce((s, b) => s + Number(b.litres), 0);
-  const totalPrice  = bookings.reduce((s, b) => s + Number(b.price),  0);
   el.innerHTML = `
     <table>
       <thead><tr>
