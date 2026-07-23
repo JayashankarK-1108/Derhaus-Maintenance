@@ -45,14 +45,15 @@ async function computeBill(month) {
   });
 
   const totalUnits = consumption.reduce((s, c) => s + c.units, 0);
-  const totalMeteredLitres = totalUnits * 1000;
+  // Readings are stored in litres directly — no unit conversion needed
+  const totalMeteredLitres = totalUnits;
   const totalReceivedLitres = Number(supply.total_received_litres) || totalMeteredLitres;
   const discrepancyLitres = totalReceivedLitres - totalMeteredLitres;
   const waterBillAmount = Number(supply.water_bill_amount) || 0;
 
   const bill = consumption.map(({ flat, units, cur, prev }) => {
     const pct = totalUnits > 0 ? units / totalUnits : 0;
-    const meteredLitres = units * 1000;
+    const meteredLitres = units; // readings are in litres
     const discrepancyShareLitres = pct * discrepancyLitres;
     const adjustedLitres = meteredLitres + discrepancyShareLitres;
     const waterCharge = pct * waterBillAmount;

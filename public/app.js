@@ -244,7 +244,7 @@ function renderFlatDetails(readings, prevReadings = []) {
                 oninput="recalcConsumed(${f.id})">
             </td>
             <td id="consumed-${f.id}">${consumed !== null
-              ? `<span class="consumed-badge">${consumed} units</span>`
+              ? `<span class="consumed-badge">${consumed} L</span>`
               : dash}</td>
           </tr>`;
         }).join('')}
@@ -352,7 +352,7 @@ function renderUsage(bill) {
         <th>Owner Name</th>
         <th>Prev Reading</th>
         <th>Curr Reading</th>
-        <th>Usage (units)</th>
+        <th>Usage (L)</th>
         <th>% Usage</th>
         <th>Total Usage (L)</th>
         <th>Price (₹)</th>
