@@ -442,6 +442,9 @@ function renderUsage(bill, commonReading = null) {
   const grandTotalPrice  = Math.round((totalFlatPrice + commonCharge) * 100) / 100;
   const grandTotalUsage  = bill.flats.reduce((s, f) => s + f.units, 0) + commonUnits;
 
+  const commonDiscShare = Math.round(commonPct / 100 * bill.discrepancy_litres);
+  const totalDiscrepancy = Math.round(bill.discrepancy_litres);
+
   el.innerHTML = `
     <table>
       <thead><tr>
@@ -451,6 +454,7 @@ function renderUsage(bill, commonReading = null) {
         <th>Curr Reading</th>
         <th>Usage (L)</th>
         <th>% Usage</th>
+        <th>Predicted Usage (L)</th>
         <th>Total Usage (L)</th>
         <th>Price (₹)</th>
       </tr></thead>
@@ -463,6 +467,7 @@ function renderUsage(bill, commonReading = null) {
             <td>${f.cur_reading  ?? dash}</td>
             <td>${Number(f.units).toLocaleString('en-IN')}</td>
             <td>${f.pct}%</td>
+            <td>${Number(f.discrepancy_share_litres).toLocaleString('en-IN')}</td>
             <td>${totalUsageL}</td>
             <td>₹${f.water_charge.toLocaleString('en-IN')}</td>
           </tr>`).join('')}
@@ -473,6 +478,7 @@ function renderUsage(bill, commonReading = null) {
           <td>${commonCur  !== null ? commonCur.toLocaleString('en-IN')  : dash}</td>
           <td>${commonUnits.toLocaleString('en-IN')}</td>
           <td>${commonPct}%</td>
+          <td>${commonDiscShare.toLocaleString('en-IN')}</td>
           <td>${totalUsageL}</td>
           <td>₹${commonCharge.toLocaleString('en-IN')}</td>
         </tr>
@@ -482,6 +488,7 @@ function renderUsage(bill, commonReading = null) {
           <td colspan="4"><strong>Total</strong></td>
           <td><strong>${grandTotalUsage.toLocaleString('en-IN')} L</strong></td>
           <td><strong>100%</strong></td>
+          <td><strong>${totalDiscrepancy.toLocaleString('en-IN')} L</strong></td>
           <td><strong>${totalUsageL}</strong></td>
           <td><strong>₹${grandTotalPrice.toLocaleString('en-IN')}</strong></td>
         </tr>
