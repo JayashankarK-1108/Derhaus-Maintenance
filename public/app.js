@@ -381,9 +381,12 @@ async function saveReadings() {
 // ────────────────────────────────────────────────
 
 async function loadUsage(month) {
-  const bill = await apiFetch(`${API}/api/bill?month=${month}`);
+  const [bill, commonReading] = await Promise.all([
+    apiFetch(`${API}/api/bill?month=${month}`),
+    apiFetch(`${API}/api/common-readings?month=${month}`)
+  ]);
   renderSummary(bill);
-  renderUsage(bill);
+  renderUsage(bill, commonReading);
 }
 
 function renderSummary(bill) {
@@ -411,7 +414,7 @@ function renderSummary(bill) {
     </div>`;
 }
 
-function renderUsage(bill) {
+function renderUsage(bill, commonReading = null) {
   const el = document.getElementById('usage-table');
   if (!bill.flats || bill.flats.length === 0) {
     el.innerHTML = `
@@ -421,7 +424,24 @@ function renderUsage(bill) {
       </div>`;
     return;
   }
-  const totalUsageL = Math.round(bill.total_metered_litres).toLocaleString('en-IN');
+
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+
+  // Common area calculations
+  const commonPrev = commonReading?.prev_reading != null ? Number(commonReading.prev_reading) : null;
+  const commonCur  = commonReading?.cur_reading  != null ? Number(commonReading.cur_reading)  : null;
+  const commonUnits = (commonCur !== null && commonPrev !== null) ? Math.max(0, commonCur - commonPrev) : 0;
+
+  // Totals
+  const grandTotalUnits  = bill.total_units + commonUnits;
+  const commonPct        = grandTotalUnits > 0 ? Number(((commonUnits / grandTotalUnits) * 100).toFixed(2)) : 0;
+  const commonCharge     = grandTotalUnits > 0 ? Math.round((commonUnits / grandTotalUnits) * bill.water_bill_amount * 100) / 100 : 0;
+
+  const totalUsageL      = Math.round(bill.total_metered_litres + commonUnits).toLocaleString('en-IN');
+  const totalFlatPrice   = bill.flats.reduce((s, f) => s + f.water_charge, 0);
+  const grandTotalPrice  = Math.round((totalFlatPrice + commonCharge) * 100) / 100;
+  const grandTotalUsage  = bill.flats.reduce((s, f) => s + f.units, 0) + commonUnits;
+
   el.innerHTML = `
     <table>
       <thead><tr>
@@ -438,15 +458,34 @@ function renderUsage(bill) {
         ${bill.flats.map(f => `
           <tr>
             <td><strong>${f.flat_no}</strong></td>
-            <td>${f.owner_name || '<span style="color:var(--text-secondary)">—</span>'}</td>
-            <td>${f.prev_reading ?? '<span style="color:var(--text-secondary)">—</span>'}</td>
-            <td>${f.cur_reading  ?? '<span style="color:var(--text-secondary)">—</span>'}</td>
-            <td>${f.units}</td>
+            <td>${f.owner_name || dash}</td>
+            <td>${f.prev_reading ?? dash}</td>
+            <td>${f.cur_reading  ?? dash}</td>
+            <td>${Number(f.units).toLocaleString('en-IN')}</td>
             <td>${f.pct}%</td>
             <td>${totalUsageL}</td>
             <td>₹${f.water_charge.toLocaleString('en-IN')}</td>
           </tr>`).join('')}
+        <tr class="common-row">
+          <td><strong>Common</strong></td>
+          <td>Common Usage</td>
+          <td>${commonPrev !== null ? commonPrev.toLocaleString('en-IN') : dash}</td>
+          <td>${commonCur  !== null ? commonCur.toLocaleString('en-IN')  : dash}</td>
+          <td>${commonUnits.toLocaleString('en-IN')}</td>
+          <td>${commonPct}%</td>
+          <td>${totalUsageL}</td>
+          <td>₹${commonCharge.toLocaleString('en-IN')}</td>
+        </tr>
       </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4"><strong>Total</strong></td>
+          <td><strong>${grandTotalUsage.toLocaleString('en-IN')} L</strong></td>
+          <td><strong>100%</strong></td>
+          <td><strong>${totalUsageL}</strong></td>
+          <td><strong>₹${grandTotalPrice.toLocaleString('en-IN')}</strong></td>
+        </tr>
+      </tfoot>
     </table>`;
 }
 
