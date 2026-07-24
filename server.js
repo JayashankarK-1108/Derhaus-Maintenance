@@ -215,6 +215,87 @@ app.get('/api/bill', async (req, res) => {
   }
 });
 
+// --- Common readings (meter for common area) ---
+app.get('/api/common-readings', async (req, res) => {
+  const { month } = req.query;
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM common_readings WHERE month = $1', [month]
+    );
+    res.json(rows[0] || null);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to load common readings' });
+  }
+});
+
+app.post('/api/common-readings', async (req, res) => {
+  const { month, prev_reading, cur_reading } = req.body;
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO common_readings (month, prev_reading, cur_reading)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (month) DO UPDATE SET
+         prev_reading = EXCLUDED.prev_reading,
+         cur_reading  = EXCLUDED.cur_reading,
+         recorded_at  = now()
+       RETURNING *`,
+      [month, prev_reading ?? null, cur_reading ?? null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to save common readings' });
+  }
+});
+
+// --- Common charges (Common EB, Drainage Load, Miscellaneous) ---
+app.get('/api/common-charges', async (req, res) => {
+  const { month } = req.query;
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
+  try {
+    const { rows } = await pool.query(
+      `SELECT cc.*, f.flat_no FROM common_charges cc
+       LEFT JOIN flats f ON f.id = cc.paid_by_flat_id
+       WHERE cc.month = $1 ORDER BY cc.id`, [month]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to load common charges' });
+  }
+});
+
+app.post('/api/common-charges', async (req, res) => {
+  const { month, category, amount, paid_by_flat_id } = req.body;
+  if (!category) return res.status(400).json({ error: 'category is required' });
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
+  if (amount !== undefined && Number(amount) < 0) {
+    return res.status(400).json({ error: 'amount cannot be negative' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO common_charges (month, category, amount, paid_by_flat_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (month, category) DO UPDATE SET
+         amount          = EXCLUDED.amount,
+         paid_by_flat_id = EXCLUDED.paid_by_flat_id
+       RETURNING *`,
+      [month, category, amount ?? 0, paid_by_flat_id || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to save common charge' });
+  }
+});
+
 // --- Payments ---
 app.get('/api/payments', async (req, res) => {
   const { month } = req.query;

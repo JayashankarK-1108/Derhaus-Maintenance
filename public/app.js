@@ -48,6 +48,7 @@ document.querySelectorAll('.tab').forEach(btn => {
 document.getElementById('load-btn').addEventListener('click', loadAll);
 document.getElementById('add-booking-btn').addEventListener('click', addBooking);
 document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
+document.getElementById('save-charges-btn').addEventListener('click', saveCommonCharges);
 
 // ── Helpers ─────────────────────────────────────
 async function apiFetch(url, opts) {
@@ -222,16 +223,25 @@ function renderBookings(bookings) {
 // ────────────────────────────────────────────────
 
 async function loadFlatDetails(month) {
-  const [readings, prevReadings] = await Promise.all([
+  const [readings, prevReadings, commonReading, commonCharges] = await Promise.all([
     apiFetch(`${API}/api/readings?month=${month}`),
-    apiFetch(`${API}/api/readings?month=${prevMonthStr(month)}`)
+    apiFetch(`${API}/api/readings?month=${prevMonthStr(month)}`),
+    apiFetch(`${API}/api/common-readings?month=${month}`),
+    apiFetch(`${API}/api/common-charges?month=${month}`)
   ]);
-  renderFlatDetails(readings, prevReadings);
+  renderFlatDetails(readings, prevReadings, commonReading);
+  renderCommonCharges(commonCharges);
 }
 
-function renderFlatDetails(readings, prevReadings = []) {
+function renderFlatDetails(readings, prevReadings = [], commonReading = null) {
   const byFlat     = Object.fromEntries(readings.map(r => [r.flat_id, Number(r.reading_units)]));
   const byFlatPrev = Object.fromEntries(prevReadings.map(r => [r.flat_id, Number(r.reading_units)]));
+
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+
+  const commonPrev = commonReading?.prev_reading != null ? Number(commonReading.prev_reading) : null;
+  const commonCur  = commonReading?.cur_reading  != null ? Number(commonReading.cur_reading)  : null;
+  const commonConsumed = commonCur !== null && commonPrev !== null ? Math.max(0, commonCur - commonPrev) : null;
 
   document.getElementById('flats-table').innerHTML = `
     <table>
@@ -239,7 +249,7 @@ function renderFlatDetails(readings, prevReadings = []) {
         <th>Flat ID</th>
         <th>Owner Name</th>
         <th>Previous Reading</th>
-        <th>Current Reading (units)</th>
+        <th>Current Reading</th>
         <th>Water Consumed</th>
       </tr></thead>
       <tbody>
@@ -247,7 +257,6 @@ function renderFlatDetails(readings, prevReadings = []) {
           const cur      = byFlat[f.id]     !== undefined ? byFlat[f.id]     : null;
           const prev     = byFlatPrev[f.id] !== undefined ? byFlatPrev[f.id] : null;
           const consumed = cur !== null && prev !== null ? Math.max(0, cur - prev) : null;
-          const dash     = `<span style="color:var(--text-secondary)">—</span>`;
           return `
           <tr>
             <td><strong>${f.flat_no}</strong></td>
@@ -261,7 +270,7 @@ function renderFlatDetails(readings, prevReadings = []) {
             <td>
               <input class="reading-input" type="number" data-flat-id="${f.id}"
                 value="${cur !== null ? cur : ''}"
-                placeholder="Enter units" min="0"
+                placeholder="Enter reading" min="0"
                 oninput="recalcConsumed(${f.id})">
             </td>
             <td id="consumed-${f.id}">${consumed !== null
@@ -269,6 +278,25 @@ function renderFlatDetails(readings, prevReadings = []) {
               : dash}</td>
           </tr>`;
         }).join('')}
+        <tr class="common-row">
+          <td><strong>Common</strong></td>
+          <td style="color:var(--text-secondary)">Common Usage</td>
+          <td>
+            <input class="reading-input" type="number" id="common-prev-reading"
+              value="${commonPrev !== null ? commonPrev : ''}"
+              placeholder="Enter prev" min="0"
+              oninput="recalcCommonConsumed()">
+          </td>
+          <td>
+            <input class="reading-input" type="number" id="common-cur-reading"
+              value="${commonCur !== null ? commonCur : ''}"
+              placeholder="Enter reading" min="0"
+              oninput="recalcCommonConsumed()">
+          </td>
+          <td id="consumed-common">${commonConsumed !== null
+            ? `<span class="consumed-badge">${commonConsumed} L</span>`
+            : dash}</td>
+        </tr>
       </tbody>
     </table>`;
 }
@@ -283,7 +311,20 @@ window.recalcConsumed = function(flatId) {
   const prev = prevInp.value !== '' ? Number(prevInp.value) : null;
   const dash = `<span style="color:var(--text-secondary)">—</span>`;
   el.innerHTML = (cur !== null && prev !== null)
-    ? `<span class="consumed-badge">${Math.max(0, cur - prev)} units</span>`
+    ? `<span class="consumed-badge">${Math.max(0, cur - prev)} L</span>`
+    : dash;
+};
+
+window.recalcCommonConsumed = function() {
+  const curInp  = document.getElementById('common-cur-reading');
+  const prevInp = document.getElementById('common-prev-reading');
+  const el      = document.getElementById('consumed-common');
+  if (!curInp || !prevInp || !el) return;
+  const cur  = curInp.value  !== '' ? Number(curInp.value)  : null;
+  const prev = prevInp.value !== '' ? Number(prevInp.value) : null;
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+  el.innerHTML = (cur !== null && prev !== null)
+    ? `<span class="consumed-badge">${Math.max(0, cur - prev)} L</span>`
     : dash;
 };
 
@@ -312,6 +353,21 @@ async function saveReadings() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ flat_id: Number(inp.dataset.prevFlatId), month: prev, reading_units: val })
+      });
+    }
+    // Save common area readings
+    const commonPrevInp = document.getElementById('common-prev-reading');
+    const commonCurInp  = document.getElementById('common-cur-reading');
+    if (commonPrevInp || commonCurInp) {
+      const prevVal = commonPrevInp?.value !== '' ? Number(commonPrevInp.value) : null;
+      const curVal  = commonCurInp?.value  !== '' ? Number(commonCurInp.value)  : null;
+      if ((prevVal !== null && prevVal < 0) || (curVal !== null && curVal < 0)) {
+        throw new Error('Readings cannot be negative');
+      }
+      await apiFetch(`${API}/api/common-readings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, prev_reading: prevVal, cur_reading: curVal })
       });
     }
     await loadAll();
@@ -392,6 +448,69 @@ function renderUsage(bill) {
           </tr>`).join('')}
       </tbody>
     </table>`;
+}
+
+// ────────────────────────────────────────────────
+// Common Charges
+// ────────────────────────────────────────────────
+
+const COMMON_CATEGORIES = ['Common EB', 'Drainage Load', 'Miscellaneous'];
+
+function renderCommonCharges(charges) {
+  const byCategory = Object.fromEntries(charges.map(c => [c.category, c]));
+  const flatOptions = '<option value="">— None —</option>' +
+    flats.map(f => `<option value="${f.id}">${f.flat_no}</option>`).join('');
+
+  document.getElementById('common-charges-table').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Category</th>
+        <th>Amount (₹)</th>
+        <th>Paid By</th>
+      </tr></thead>
+      <tbody>
+        ${COMMON_CATEGORIES.map(cat => {
+          const row = byCategory[cat];
+          const amount = row ? row.amount : '';
+          const paidBy = row ? (row.paid_by_flat_id || '') : '';
+          return `
+          <tr>
+            <td><strong>${cat}</strong></td>
+            <td>
+              <input class="reading-input" type="number" data-charge-cat="${cat}"
+                value="${amount}" placeholder="0" min="0">
+            </td>
+            <td>
+              <select class="table-select" data-charge-paid="${cat}">
+                ${flatOptions.replace(`value="${paidBy}"`, `value="${paidBy}" selected`)}
+              </select>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function saveCommonCharges() {
+  const month = monthInput.value;
+  clearError();
+  try {
+    for (const cat of COMMON_CATEGORIES) {
+      const amtInp  = document.querySelector(`input[data-charge-cat="${cat}"]`);
+      const paidSel = document.querySelector(`select[data-charge-paid="${cat}"]`);
+      const amount        = amtInp  ? Number(amtInp.value || 0) : 0;
+      const paid_by_flat_id = paidSel?.value ? Number(paidSel.value) : null;
+      if (amount < 0) throw new Error('Amount cannot be negative');
+      await apiFetch(`${API}/api/common-charges`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, category: cat, amount, paid_by_flat_id })
+      });
+    }
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to save common charges.');
+  }
 }
 
 updateIntro();
