@@ -134,6 +134,7 @@ async function loadBookings(month) {
     apiFetch(`${API}/api/drainage-bookings?month=${month}`)
   ]);
   renderBookings(bookings);
+  renderMetroSummary(bookings);
   renderDrainageBookings(drainageBookings);
 }
 
@@ -330,16 +331,14 @@ function renderDrainageBookings(bookings) {
 // ────────────────────────────────────────────────
 
 async function loadFlatDetails(month) {
-  const [readings, prevReadings, commonReading, commonCharges, bookings] = await Promise.all([
+  const [readings, prevReadings, commonReading, commonCharges] = await Promise.all([
     apiFetch(`${API}/api/readings?month=${month}`),
     apiFetch(`${API}/api/readings?month=${prevMonthStr(month)}`),
     apiFetch(`${API}/api/common-readings?month=${month}`),
-    apiFetch(`${API}/api/common-charges?month=${month}`),
-    apiFetch(`${API}/api/water-bookings?month=${month}`)
+    apiFetch(`${API}/api/common-charges?month=${month}`)
   ]);
   renderFlatDetails(readings, prevReadings, commonReading);
   renderCommonCharges(commonCharges);
-  renderMetroSummary(bookings);
 }
 
 function renderFlatDetails(readings, prevReadings = [], commonReading = null) {
