@@ -330,6 +330,15 @@ app.get('/api/common-charges', async (req, res) => {
   const monthErr = validateMonth(month);
   if (monthErr) return res.status(400).json({ error: monthErr });
   try {
+    // Always re-sync Drainage Load from drainage_bookings so it stays accurate
+    await pool.query(
+      `INSERT INTO common_charges (month, category, amount)
+       SELECT $1, 'Drainage Load',
+              COALESCE(SUM(CAST(num_loads AS NUMERIC) * price_per_load), 0)
+       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1
+       ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
+      [month]
+    );
     const { rows } = await pool.query(
       `SELECT cc.*, f.flat_no FROM common_charges cc
        LEFT JOIN flats f ON f.id = cc.paid_by_flat_id
@@ -351,6 +360,17 @@ app.post('/api/common-charges', async (req, res) => {
     return res.status(400).json({ error: 'amount cannot be negative' });
   }
   try {
+    let finalAmount;
+    if (category === 'Drainage Load') {
+      // Amount is always derived from drainage_bookings; never allow manual override
+      const { rows: dr } = await pool.query(
+        `SELECT COALESCE(SUM(CAST(num_loads AS NUMERIC) * price_per_load), 0) AS total
+         FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1`, [month]
+      );
+      finalAmount = dr[0].total;
+    } else {
+      finalAmount = amount ?? 0;
+    }
     const { rows } = await pool.query(
       `INSERT INTO common_charges (month, category, amount, paid_by_flat_id)
        VALUES ($1, $2, $3, $4)
@@ -358,7 +378,7 @@ app.post('/api/common-charges', async (req, res) => {
          amount          = EXCLUDED.amount,
          paid_by_flat_id = EXCLUDED.paid_by_flat_id
        RETURNING *`,
-      [month, category, amount ?? 0, paid_by_flat_id || null]
+      [month, category, finalAmount, paid_by_flat_id || null]
     );
     res.json(rows[0]);
   } catch (err) {

@@ -648,14 +648,19 @@ function renderCommonCharges(charges) {
       <tbody>
         ${COMMON_CATEGORIES.map(cat => {
           const row = byCategory[cat];
-          const amount = row ? row.amount : '';
+          const amount = row ? Number(row.amount) : 0;
           const paidBy = row ? (row.paid_by_flat_id || '') : '';
+          const isDrainage = cat === 'Drainage Load';
           return `
           <tr>
-            <td><strong>${cat}</strong></td>
+            <td><strong>${cat}</strong>${isDrainage ? ' <span style="font-size:11px;color:var(--text-secondary)">(auto)</span>' : ''}</td>
             <td>
-              <input class="reading-input" type="number" data-charge-cat="${cat}"
-                value="${amount}" placeholder="0" min="0">
+              ${isDrainage
+                ? `<span class="consumed-badge">₹${Number(amount).toLocaleString('en-IN')}</span>
+                   <input type="hidden" data-charge-cat="${cat}" value="${amount}">`
+                : `<input class="reading-input" type="number" data-charge-cat="${cat}"
+                     value="${amount}" placeholder="0" min="0">`
+              }
             </td>
             <td>
               <select class="table-select" data-charge-paid="${cat}">
