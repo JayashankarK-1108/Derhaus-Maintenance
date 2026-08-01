@@ -523,7 +523,10 @@ function renderUsage(bill, commonReading = null) {
 // Common Charges
 // ────────────────────────────────────────────────
 
-const COMMON_CATEGORIES = ['Common EB', 'Drainage Load', 'Miscellaneous'];
+const COMMON_CATEGORIES = [
+  'Common EB', 'Drainage Load', 'Miscellaneous',
+  'Watchman Salary', 'Electrical Works', 'Lift Works', 'Civil Works', 'Plumbing Works'
+];
 
 function renderCommonCharges(charges) {
   const byCategory = Object.fromEntries(charges.map(c => [c.category, c]));
