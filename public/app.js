@@ -859,7 +859,7 @@ function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = [
       </tr></thead>
       <tbody>
         ${adjustedFlats.map(f => {
-          const metroPaid = metroPaidByFlat[f.id] || 0;
+          const metroPaid = metroPaidByFlat[f.flat_id] || 0;
           const gross = f.adjusted_price + watchmanShare + ebShare + drainageShare + otherShare;
           const grand = Math.round((gross - metroPaid) * 100) / 100;
           return `
