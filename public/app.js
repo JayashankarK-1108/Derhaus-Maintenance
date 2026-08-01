@@ -330,14 +330,16 @@ function renderDrainageBookings(bookings) {
 // ────────────────────────────────────────────────
 
 async function loadFlatDetails(month) {
-  const [readings, prevReadings, commonReading, commonCharges] = await Promise.all([
+  const [readings, prevReadings, commonReading, commonCharges, bookings] = await Promise.all([
     apiFetch(`${API}/api/readings?month=${month}`),
     apiFetch(`${API}/api/readings?month=${prevMonthStr(month)}`),
     apiFetch(`${API}/api/common-readings?month=${month}`),
-    apiFetch(`${API}/api/common-charges?month=${month}`)
+    apiFetch(`${API}/api/common-charges?month=${month}`),
+    apiFetch(`${API}/api/water-bookings?month=${month}`)
   ]);
   renderFlatDetails(readings, prevReadings, commonReading);
   renderCommonCharges(commonCharges);
+  renderMetroSummary(bookings);
 }
 
 function renderFlatDetails(readings, prevReadings = [], commonReading = null) {
@@ -629,6 +631,61 @@ function renderUsage(bill, commonReading = null) {
 // ────────────────────────────────────────────────
 // Common Charges
 // ────────────────────────────────────────────────
+
+function renderMetroSummary(bookings) {
+  const el = document.getElementById('metro-summary-table');
+  if (!el) return;
+
+  // Aggregate Metro bookings per flat
+  const metroByFlat = {};
+  for (const b of bookings) {
+    if (b.type_of_load !== 'Metro') continue;
+    const key = b.flat_id;
+    if (!metroByFlat[key]) metroByFlat[key] = { flat_no: b.flat_no, count: 0, totalPrice: 0 };
+    metroByFlat[key].count      += 1;
+    metroByFlat[key].totalPrice += Number(b.price);
+  }
+
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+  const rows = flats.map(f => {
+    const data = metroByFlat[f.id];
+    const count = data ? data.count      : 0;
+    const total = data ? data.totalPrice : 0;
+    // Price per booking = total / count, or 0 if no bookings
+    const priceEach = count > 0 ? Math.round(total / count) : 0;
+    return { flat_no: f.flat_no, count, priceEach, total };
+  });
+
+  const grandCount = rows.reduce((s, r) => s + r.count, 0);
+  const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+
+  el.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Flat Number</th>
+        <th>No. of Metro Bookings</th>
+        <th>Price / Booking (₹)</th>
+        <th>Total Price (₹)</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            <td><strong>${r.flat_no}</strong></td>
+            <td>${r.count > 0 ? r.count : dash}</td>
+            <td>${r.count > 0 ? `₹${r.priceEach.toLocaleString('en-IN')}` : dash}</td>
+            <td>${r.count > 0 ? `₹${r.total.toLocaleString('en-IN')}` : dash}</td>
+          </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td><strong>Total</strong></td>
+          <td><strong>${grandCount}</strong></td>
+          <td></td>
+          <td><strong>₹${grandTotal.toLocaleString('en-IN')}</strong></td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
 
 const COMMON_CATEGORIES = [
   'Common EB', 'Drainage Load', 'Miscellaneous',
