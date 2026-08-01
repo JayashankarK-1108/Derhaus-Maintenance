@@ -250,8 +250,8 @@ app.post('/api/drainage-bookings', async (req, res) => {
     // Sync monthly total into common_charges Drainage Load row
     await pool.query(
       `INSERT INTO common_charges (month, category, amount)
-       SELECT $1, 'Drainage Load', COALESCE(SUM(total_price), 0)
-       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1
+       SELECT $1::char(7), 'Drainage Load', COALESCE(SUM(total_price), 0)
+       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
        ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
       [month]
     );
@@ -274,8 +274,8 @@ app.delete('/api/drainage-bookings/:id', async (req, res) => {
     // Re-sync monthly total into common_charges
     await pool.query(
       `INSERT INTO common_charges (month, category, amount)
-       SELECT $1, 'Drainage Load', COALESCE(SUM(total_price), 0)
-       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1
+       SELECT $1::char(7), 'Drainage Load', COALESCE(SUM(total_price), 0)
+       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
        ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
       [month]
     );
@@ -333,9 +333,9 @@ app.get('/api/common-charges', async (req, res) => {
     // Always re-sync Drainage Load from drainage_bookings so it stays accurate
     await pool.query(
       `INSERT INTO common_charges (month, category, amount)
-       SELECT $1, 'Drainage Load',
+       SELECT $1::char(7), 'Drainage Load',
               COALESCE(SUM(CAST(num_loads AS NUMERIC) * price_per_load), 0)
-       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1
+       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
        ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
       [month]
     );
@@ -365,7 +365,7 @@ app.post('/api/common-charges', async (req, res) => {
       // Amount is always derived from drainage_bookings; never allow manual override
       const { rows: dr } = await pool.query(
         `SELECT COALESCE(SUM(CAST(num_loads AS NUMERIC) * price_per_load), 0) AS total
-         FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1`, [month]
+         FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)`, [month]
       );
       finalAmount = dr[0].total;
     } else {
