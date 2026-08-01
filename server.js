@@ -181,12 +181,12 @@ app.post('/api/water-bookings', async (req, res) => {
     await pool.query(
       `INSERT INTO water_supply (month, total_received_litres, water_bill_amount, price_per_litre)
        SELECT
-         $1,
+         $1::char(7),
          COALESCE(SUM(litres), 0),
          COALESCE(SUM(price), 0),
          CASE WHEN SUM(litres) > 0 THEN ROUND(SUM(price)::NUMERIC / SUM(litres), 4) ELSE 0 END
        FROM water_bookings
-       WHERE to_char(booking_date, 'YYYY-MM') = $1
+       WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
        ON CONFLICT (month) DO UPDATE SET
          total_received_litres = EXCLUDED.total_received_litres,
          water_bill_amount     = EXCLUDED.water_bill_amount,
