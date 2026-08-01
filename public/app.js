@@ -544,11 +544,7 @@ function renderUsage(bill, commonReading = null) {
   // Totals
   const grandTotalUnits  = bill.total_units + commonUnits;
   const commonPct        = grandTotalUnits > 0 ? Number(((commonUnits / grandTotalUnits) * 100).toFixed(2)) : 0;
-  const commonCharge     = grandTotalUnits > 0 ? Math.round((commonUnits / grandTotalUnits) * bill.water_bill_amount * 100) / 100 : 0;
 
-  const totalUsageL      = Math.round(bill.total_metered_litres + commonUnits).toLocaleString('en-IN');
-  const totalFlatPrice   = bill.flats.reduce((s, f) => s + f.water_charge, 0);
-  const grandTotalPrice  = Math.round((totalFlatPrice + commonCharge) * 100) / 100;
   const grandTotalUsage  = bill.flats.reduce((s, f) => s + f.units, 0) + commonUnits;
 
   // Per-flat adjusted usage = metered usage + proportional discrepancy share
@@ -647,14 +643,22 @@ function renderMetroSummary(bookings) {
   }
 
   const dash = `<span style="color:var(--text-secondary)">—</span>`;
-  const rows = flats.map(f => {
-    const data = metroByFlat[f.id];
-    const count = data ? data.count      : 0;
-    const total = data ? data.totalPrice : 0;
-    // Price per booking = total / count, or 0 if no bookings
-    const priceEach = count > 0 ? Math.round(total / count) : 0;
-    return { flat_no: f.flat_no, count, priceEach, total };
-  });
+  const rows = flats
+    .map(f => {
+      const data = metroByFlat[f.id];
+      if (!data) return null;
+      const priceEach = Math.round(data.totalPrice / data.count);
+      return { flat_no: f.flat_no, count: data.count, priceEach, total: data.totalPrice };
+    })
+    .filter(Boolean);
+
+  if (rows.length === 0) {
+    el.innerHTML = `<div class="empty-state" style="padding:24px 0">
+      <div class="empty-icon">🚛</div>
+      <p>No Metro bookings this month.</p>
+    </div>`;
+    return;
+  }
 
   const grandCount = rows.reduce((s, r) => s + r.count, 0);
   const grandTotal = rows.reduce((s, r) => s + r.total, 0);
