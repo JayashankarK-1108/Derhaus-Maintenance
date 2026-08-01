@@ -442,8 +442,31 @@ function renderUsage(bill, commonReading = null) {
   const grandTotalPrice  = Math.round((totalFlatPrice + commonCharge) * 100) / 100;
   const grandTotalUsage  = bill.flats.reduce((s, f) => s + f.units, 0) + commonUnits;
 
+  // Per-flat adjusted usage = metered usage + proportional discrepancy share
   const commonDiscShare = Math.round(commonPct / 100 * bill.discrepancy_litres);
-  const totalDiscrepancy = Math.round(bill.discrepancy_litres);
+  const commonAdjusted  = commonUnits + commonDiscShare;
+
+  const adjustedFlats = bill.flats.map(f => ({
+    ...f,
+    adjusted_usage: Number(f.units) + Number(f.discrepancy_share_litres)
+  }));
+
+  // Grand total adjusted = all flats + common area
+  const grandAdjustedTotal = adjustedFlats.reduce((s, f) => s + f.adjusted_usage, 0) + commonAdjusted;
+
+  // Recalculate price proportionally from adjusted usage
+  adjustedFlats.forEach(f => {
+    f.adjusted_price = grandAdjustedTotal > 0
+      ? Math.round((f.adjusted_usage / grandAdjustedTotal) * bill.water_bill_amount * 100) / 100
+      : 0;
+  });
+  const commonAdjustedPrice = grandAdjustedTotal > 0
+    ? Math.round((commonAdjusted / grandAdjustedTotal) * bill.water_bill_amount * 100) / 100
+    : 0;
+
+  const grandTotalAdjustedPrice = Math.round(
+    (adjustedFlats.reduce((s, f) => s + f.adjusted_price, 0) + commonAdjustedPrice) * 100
+  ) / 100;
 
   el.innerHTML = `
     <table>
@@ -459,7 +482,7 @@ function renderUsage(bill, commonReading = null) {
         <th>Price (₹)</th>
       </tr></thead>
       <tbody>
-        ${bill.flats.map(f => `
+        ${adjustedFlats.map(f => `
           <tr>
             <td><strong>${f.flat_no}</strong></td>
             <td>${f.owner_name || dash}</td>
@@ -468,8 +491,8 @@ function renderUsage(bill, commonReading = null) {
             <td>${Number(f.units).toLocaleString('en-IN')}</td>
             <td>${f.pct}%</td>
             <td>${Number(f.discrepancy_share_litres).toLocaleString('en-IN')}</td>
-            <td>${totalUsageL}</td>
-            <td>₹${f.water_charge.toLocaleString('en-IN')}</td>
+            <td>${f.adjusted_usage.toLocaleString('en-IN')}</td>
+            <td>₹${f.adjusted_price.toLocaleString('en-IN')}</td>
           </tr>`).join('')}
         <tr class="common-row">
           <td><strong>Common</strong></td>
@@ -479,8 +502,8 @@ function renderUsage(bill, commonReading = null) {
           <td>${commonUnits.toLocaleString('en-IN')}</td>
           <td>${commonPct}%</td>
           <td>${commonDiscShare.toLocaleString('en-IN')}</td>
-          <td>${totalUsageL}</td>
-          <td>₹${commonCharge.toLocaleString('en-IN')}</td>
+          <td>${commonAdjusted.toLocaleString('en-IN')}</td>
+          <td>₹${commonAdjustedPrice.toLocaleString('en-IN')}</td>
         </tr>
       </tbody>
       <tfoot>
@@ -488,9 +511,9 @@ function renderUsage(bill, commonReading = null) {
           <td colspan="4"><strong>Total</strong></td>
           <td><strong>${grandTotalUsage.toLocaleString('en-IN')} L</strong></td>
           <td><strong>100%</strong></td>
-          <td><strong>${totalDiscrepancy.toLocaleString('en-IN')} L</strong></td>
-          <td><strong>${totalUsageL}</strong></td>
-          <td><strong>₹${grandTotalPrice.toLocaleString('en-IN')}</strong></td>
+          <td><strong>${Math.round(bill.discrepancy_litres).toLocaleString('en-IN')} L</strong></td>
+          <td><strong>${grandAdjustedTotal.toLocaleString('en-IN')} L</strong></td>
+          <td><strong>₹${grandTotalAdjustedPrice.toLocaleString('en-IN')}</strong></td>
         </tr>
       </tfoot>
     </table>`;
