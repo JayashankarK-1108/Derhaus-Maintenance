@@ -393,6 +393,19 @@ tfoot td {
 .badge.paid    { background: var(--success-bg); color: var(--success-text); }
 .badge.pending { background: var(--danger-bg);  color: var(--danger-text);  cursor: pointer; }
 
+/* Delete button in tables */
+.btn-delete {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-delete:hover { background: var(--danger-bg); color: var(--danger-text); border-color: #f0bebe; }
+
 /* Common row in meter readings table */
 tr.common-row td { background: var(--accent-light); }
 tr.common-row:hover { background: #fef0c0; }

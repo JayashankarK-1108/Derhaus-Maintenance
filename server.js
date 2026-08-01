@@ -215,6 +215,77 @@ app.get('/api/bill', async (req, res) => {
   }
 });
 
+// --- Drainage bookings ---
+app.get('/api/drainage-bookings', async (req, res) => {
+  const { month } = req.query;
+  const monthErr = validateMonth(month);
+  if (monthErr) return res.status(400).json({ error: monthErr });
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM drainage_bookings
+       WHERE to_char(booking_date, 'YYYY-MM') = $1
+       ORDER BY booking_date`, [month]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to load drainage bookings' });
+  }
+});
+
+app.post('/api/drainage-bookings', async (req, res) => {
+  const { booking_date, num_loads, price_per_load } = req.body;
+  if (!booking_date) return res.status(400).json({ error: 'booking_date is required' });
+  if (!Number.isInteger(Number(num_loads)) || Number(num_loads) < 1)
+    return res.status(400).json({ error: 'num_loads must be a positive integer' });
+  if (Number(price_per_load) < 0)
+    return res.status(400).json({ error: 'price_per_load cannot be negative' });
+  const month = booking_date.slice(0, 7);
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO drainage_bookings (booking_date, num_loads, price_per_load)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [booking_date, Number(num_loads), Number(price_per_load)]
+    );
+    // Sync monthly total into common_charges Drainage Load row
+    await pool.query(
+      `INSERT INTO common_charges (month, category, amount)
+       SELECT $1, 'Drainage Load', COALESCE(SUM(total_price), 0)
+       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1
+       ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
+      [month]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to save drainage booking' });
+  }
+});
+
+app.delete('/api/drainage-bookings/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  try {
+    const { rows } = await pool.query(
+      'DELETE FROM drainage_bookings WHERE id=$1 RETURNING booking_date', [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    const month = rows[0].booking_date.toISOString().slice(0, 7);
+    // Re-sync monthly total into common_charges
+    await pool.query(
+      `INSERT INTO common_charges (month, category, amount)
+       SELECT $1, 'Drainage Load', COALESCE(SUM(total_price), 0)
+       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1
+       ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
+      [month]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'failed to delete drainage booking' });
+  }
+});
+
 // --- Common readings (meter for common area) ---
 app.get('/api/common-readings', async (req, res) => {
   const { month } = req.query;

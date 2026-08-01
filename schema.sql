@@ -76,6 +76,18 @@ ALTER TABLE water_bookings ADD COLUMN IF NOT EXISTS flat_id INTEGER REFERENCES f
 -- Add price_per_litre to water_supply for monthly summary storage
 ALTER TABLE water_supply ADD COLUMN IF NOT EXISTS price_per_litre NUMERIC DEFAULT 0;
 
+-- Drainage bookings
+CREATE TABLE IF NOT EXISTS drainage_bookings (
+  id            SERIAL PRIMARY KEY,
+  booking_date  DATE NOT NULL,
+  num_loads     INTEGER NOT NULL DEFAULT 1,
+  price_per_load NUMERIC NOT NULL DEFAULT 0,
+  total_price   NUMERIC GENERATED ALWAYS AS (num_loads * price_per_load) STORED,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_drainage_bookings_date ON drainage_bookings(booking_date);
+
 -- Common area meter readings (one row per month)
 CREATE TABLE IF NOT EXISTS common_readings (
   id            SERIAL PRIMARY KEY,

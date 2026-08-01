@@ -92,6 +92,27 @@
         <div id="bookings-table"></div>
       </div>
 
+      <div class="panel">
+        <div class="panel-title"><span>🚿</span> Drainage Booking</div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Date</label>
+            <input type="date" id="drainage-date">
+          </div>
+          <div class="form-field" style="max-width:160px">
+            <label>Number of Loads</label>
+            <input type="number" id="drainage-loads" placeholder="1" min="1" value="1">
+          </div>
+          <div class="form-field" style="max-width:160px">
+            <label>Price per Load (₹)</label>
+            <input type="number" id="drainage-price" placeholder="0" min="0">
+          </div>
+          <button id="add-drainage-btn" class="btn-primary">Add</button>
+        </div>
+        <div id="drainage-summary" style="margin-top:14px"></div>
+        <div id="drainage-table" style="margin-top:10px"></div>
+      </div>
+
     </div>
 
     <!-- ── Tab 2: Flat Details ─────────────────── -->
@@ -124,6 +145,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

@@ -47,8 +47,11 @@ document.querySelectorAll('.tab').forEach(btn => {
 
 document.getElementById('load-btn').addEventListener('click', loadAll);
 document.getElementById('add-booking-btn').addEventListener('click', addBooking);
+document.getElementById('add-drainage-btn').addEventListener('click', addDrainageBooking);
 document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
 document.getElementById('save-charges-btn').addEventListener('click', saveCommonCharges);
+
+document.getElementById('drainage-date').value = new Date().toISOString().split('T')[0];
 
 // ── Helpers ─────────────────────────────────────
 async function apiFetch(url, opts) {
@@ -124,8 +127,12 @@ async function loadAll() {
 // ────────────────────────────────────────────────
 
 async function loadBookings(month) {
-  const bookings = await apiFetch(`${API}/api/water-bookings?month=${month}`);
+  const [bookings, drainageBookings] = await Promise.all([
+    apiFetch(`${API}/api/water-bookings?month=${month}`),
+    apiFetch(`${API}/api/drainage-bookings?month=${month}`)
+  ]);
   renderBookings(bookings);
+  renderDrainageBookings(drainageBookings);
 }
 
 async function addBooking() {
@@ -213,6 +220,104 @@ function renderBookings(bookings) {
           <td colspan="4">Total</td>
           <td>₹${totalPrice.toLocaleString('en-IN')}</td>
           <td>${totalLitres.toLocaleString('en-IN')} L</td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
+
+// ────────────────────────────────────────────────
+// Drainage Bookings
+// ────────────────────────────────────────────────
+
+async function addDrainageBooking() {
+  const booking_date  = document.getElementById('drainage-date').value;
+  const num_loads     = Number(document.getElementById('drainage-loads').value || 1);
+  const price_per_load = Number(document.getElementById('drainage-price').value || 0);
+
+  if (!booking_date || num_loads < 1) return;
+  clearError();
+  try {
+    await apiFetch(`${API}/api/drainage-bookings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ booking_date, num_loads, price_per_load })
+    });
+    document.getElementById('drainage-loads').value = '1';
+    document.getElementById('drainage-price').value = '';
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to add drainage booking.');
+  }
+}
+
+window.deleteDrainageBooking = async function(id) {
+  clearError();
+  try {
+    await apiFetch(`${API}/api/drainage-bookings/${id}`, { method: 'DELETE' });
+    await loadAll();
+  } catch (err) {
+    showError(err.message || 'Failed to delete drainage booking.');
+  }
+};
+
+function renderDrainageBookings(bookings) {
+  const summaryEl = document.getElementById('drainage-summary');
+  const tableEl   = document.getElementById('drainage-table');
+
+  const totalLoads = bookings.reduce((s, b) => s + Number(b.num_loads), 0);
+  const totalPrice = bookings.reduce((s, b) => s + Number(b.total_price), 0);
+
+  summaryEl.innerHTML = bookings.length === 0 ? '' : `
+    <div class="cards" style="margin-bottom:0">
+      <div class="card">
+        <div class="card-icon">🚿</div>
+        <div class="label">Total Loads</div>
+        <div class="value">${totalLoads}</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">💰</div>
+        <div class="label">Total Drainage Cost</div>
+        <div class="value">₹${totalPrice.toLocaleString('en-IN')}</div>
+      </div>
+    </div>`;
+
+  if (bookings.length === 0) {
+    tableEl.innerHTML = `
+      <div class="empty-state" style="padding:24px 0">
+        <div class="empty-icon">🚿</div>
+        <p>No drainage bookings for this month yet.</p>
+      </div>`;
+    return;
+  }
+
+  tableEl.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Si.No</th>
+        <th>Date</th>
+        <th>No. of Loads</th>
+        <th>Price / Load (₹)</th>
+        <th>Total (₹)</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${bookings.map((b, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${new Date(b.booking_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td>${b.num_loads}</td>
+            <td>₹${Number(b.price_per_load).toLocaleString('en-IN')}</td>
+            <td>₹${Number(b.total_price).toLocaleString('en-IN')}</td>
+            <td><button class="btn-delete" onclick="deleteDrainageBooking(${b.id})" title="Delete">✕</button></td>
+          </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2">Total</td>
+          <td>${totalLoads}</td>
+          <td></td>
+          <td>₹${totalPrice.toLocaleString('en-IN')}</td>
+          <td></td>
         </tr>
       </tfoot>
     </table>`;
