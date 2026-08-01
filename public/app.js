@@ -762,18 +762,26 @@ async function saveCommonCharges() {
 // ────────────────────────────────────────────────
 
 async function loadFinalCalc(month) {
-  const [bill, commonCharges, commonReading] = await Promise.all([
+  const [bill, commonCharges, commonReading, bookings] = await Promise.all([
     apiFetch(`${API}/api/bill?month=${month}`),
     apiFetch(`${API}/api/common-charges?month=${month}`),
-    apiFetch(`${API}/api/common-readings?month=${month}`)
+    apiFetch(`${API}/api/common-readings?month=${month}`),
+    apiFetch(`${API}/api/water-bookings?month=${month}`)
   ]);
-  renderFinalCalc(bill, commonCharges, commonReading);
+  renderFinalCalc(bill, commonCharges, commonReading, bookings);
 }
 
-function renderFinalCalc(bill, commonCharges, commonReading = null) {
+function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = []) {
   const el = document.getElementById('final-table');
   const numFlats = flats.length || 12;
   const dash = `<span style="color:var(--text-secondary)">—</span>`;
+
+  // Per-flat Metro paid amount (sum of all Metro booking prices for this flat)
+  const metroPaidByFlat = {};
+  for (const b of bookings) {
+    if (b.type_of_load !== 'Metro' || !b.flat_id) continue;
+    metroPaidByFlat[b.flat_id] = (metroPaidByFlat[b.flat_id] || 0) + Number(b.price);
+  }
 
   // Build lookup for common charges by category
   const byCategory = Object.fromEntries(commonCharges.map(c => [c.category, Number(c.amount)]));
@@ -820,15 +828,19 @@ function renderFinalCalc(bill, commonCharges, commonReading = null) {
   }
 
   // Grand totals row
-  const totalWaterUsage = adjustedFlats.reduce((s, f) => s + f.adjusted_usage, 0);
-  const totalWaterPrice = adjustedFlats.reduce((s, f) => s + f.adjusted_price, 0);
-  const totalWatchman   = watchmanShare  * numFlats;
-  const totalEB         = ebShare        * numFlats;
-  const totalDrainage   = drainageShare  * numFlats;
-  const totalOther      = otherShare     * numFlats;
+  const totalWaterUsage  = adjustedFlats.reduce((s, f) => s + f.adjusted_usage, 0);
+  const totalWaterPrice  = adjustedFlats.reduce((s, f) => s + f.adjusted_price, 0);
+  const totalWatchman    = watchmanShare * numFlats;
+  const totalEB          = ebShare       * numFlats;
+  const totalDrainage    = drainageShare * numFlats;
+  const totalOther       = otherShare    * numFlats;
+  const totalMetroPaid   = Object.values(metroPaidByFlat).reduce((s, v) => s + v, 0);
 
-  const fmt  = n  => Number(n).toLocaleString('en-IN');
-  const fmtR = n  => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmt  = n => Number(n).toLocaleString('en-IN');
+  const fmtR = n => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtAdj = n => n === 0
+    ? dash
+    : `<span style="color:var(--danger-text);font-weight:600">-₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
 
   el.innerHTML = `
     <div style="overflow-x:auto">
@@ -842,11 +854,14 @@ function renderFinalCalc(bill, commonCharges, commonReading = null) {
         <th>EB Bill (₹)</th>
         <th>Drainage Bill (₹)</th>
         <th>Other Maintenance (₹)</th>
+        <th>Adjusted Amount (₹)</th>
         <th>Grand Total (₹)</th>
       </tr></thead>
       <tbody>
         ${adjustedFlats.map(f => {
-          const grand = Math.round((f.adjusted_price + watchmanShare + ebShare + drainageShare + otherShare) * 100) / 100;
+          const metroPaid = metroPaidByFlat[f.id] || 0;
+          const gross = f.adjusted_price + watchmanShare + ebShare + drainageShare + otherShare;
+          const grand = Math.round((gross - metroPaid) * 100) / 100;
           return `
           <tr>
             <td><strong>${f.flat_no}</strong></td>
@@ -857,6 +872,7 @@ function renderFinalCalc(bill, commonCharges, commonReading = null) {
             <td>${fmtR(ebShare)}</td>
             <td>${fmtR(drainageShare)}</td>
             <td>${fmtR(otherShare)}</td>
+            <td>${fmtAdj(metroPaid)}</td>
             <td><strong>${fmtR(grand)}</strong></td>
           </tr>`;
         }).join('')}
@@ -870,7 +886,8 @@ function renderFinalCalc(bill, commonCharges, commonReading = null) {
           <td><strong>${fmtR(totalEB)}</strong></td>
           <td><strong>${fmtR(totalDrainage)}</strong></td>
           <td><strong>${fmtR(totalOther)}</strong></td>
-          <td><strong>${fmtR(totalWaterPrice + totalWatchman + totalEB + totalDrainage + totalOther)}</strong></td>
+          <td><strong><span style="color:var(--danger-text)">-₹${totalMetroPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></strong></td>
+          <td><strong>${fmtR(totalWaterPrice + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid)}</strong></td>
         </tr>
       </tfoot>
     </table>
