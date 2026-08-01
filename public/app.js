@@ -47,10 +47,10 @@ document.querySelectorAll('.tab').forEach(btn => {
 });
 
 document.getElementById('load-btn').addEventListener('click', loadAll);
-document.getElementById('add-booking-btn').addEventListener('click', addBooking);
-document.getElementById('add-drainage-btn').addEventListener('click', addDrainageBooking);
-document.getElementById('save-readings-btn').addEventListener('click', saveReadings);
-document.getElementById('save-charges-btn').addEventListener('click', saveCommonCharges);
+document.getElementById('add-booking-btn').addEventListener('click', () => withBusy('add-booking-btn', addBooking));
+document.getElementById('add-drainage-btn').addEventListener('click', () => withBusy('add-drainage-btn', addDrainageBooking));
+document.getElementById('save-readings-btn').addEventListener('click', () => withBusy('save-readings-btn', saveReadings));
+document.getElementById('save-charges-btn').addEventListener('click', () => withBusy('save-charges-btn', saveCommonCharges));
 
 document.getElementById('drainage-date').value = new Date().toISOString().split('T')[0];
 
@@ -73,6 +73,32 @@ function clearError() {
   const el = document.getElementById('error-banner');
   el.hidden = true;
   el.textContent = '';
+}
+
+// Toast notification
+function showToast(msg) {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('toast-show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('toast-show'), 2800);
+}
+
+// Disable a button while an async fn runs (prevents double-submit)
+async function withBusy(btnId, fn) {
+  const btn = document.getElementById(btnId);
+  if (btn && btn.disabled) return;   // already in flight
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  try {
+    await fn();
+  } finally {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  }
 }
 
 // Load flats immediately on page load — runs independently of loadAll
@@ -159,6 +185,7 @@ async function addBooking() {
     document.getElementById('booking-litres').value = '';
     document.getElementById('booking-price').value  = '';
     await loadAll();
+    showToast('✓ Booking added successfully');
   } catch (err) {
     showError(err.message || 'Failed to add booking.');
   }
@@ -248,6 +275,7 @@ async function addDrainageBooking() {
     document.getElementById('drainage-loads').value = '1';
     document.getElementById('drainage-price').value = '';
     await loadAll();
+    showToast('✓ Drainage booking added');
   } catch (err) {
     showError(err.message || 'Failed to add drainage booking.');
   }
@@ -479,6 +507,7 @@ async function saveReadings() {
       });
     }
     await loadAll();
+    showToast('✓ Readings saved');
   } catch (err) {
     showError(err.message || 'Failed to save readings.');
   }
@@ -752,6 +781,7 @@ async function saveCommonCharges() {
       });
     }
     await loadAll();
+    showToast('✓ Common charges saved');
   } catch (err) {
     showError(err.message || 'Failed to save common charges.');
   }
