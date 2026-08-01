@@ -786,6 +786,18 @@ function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = [
   // Build lookup for common charges by category
   const byCategory = Object.fromEntries(commonCharges.map(c => [c.category, Number(c.amount)]));
 
+  // Per-flat credit from common charges where a flat paid the full amount upfront.
+  // Credit = full_amount - (full_amount / numFlats)  i.e. they get back what others owe them.
+  const commonCreditByFlat = {};
+  for (const c of commonCharges) {
+    if (!c.paid_by_flat_id) continue;
+    const amount = Number(c.amount);
+    const ownShare = Math.round((amount / numFlats) * 100) / 100;
+    const credit   = Math.round((amount - ownShare) * 100) / 100;
+    commonCreditByFlat[c.paid_by_flat_id] =
+      (commonCreditByFlat[c.paid_by_flat_id] || 0) + credit;
+  }
+
   // Per-flat split amounts (equal share)
   const watchmanShare  = Math.round(((byCategory['Watchman Salary'] || 0) / numFlats) * 100) / 100;
   const ebShare        = Math.round(((byCategory['Common EB']       || 0) / numFlats) * 100) / 100;
@@ -834,7 +846,8 @@ function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = [
   const totalEB          = ebShare       * numFlats;
   const totalDrainage    = drainageShare * numFlats;
   const totalOther       = otherShare    * numFlats;
-  const totalMetroPaid   = Object.values(metroPaidByFlat).reduce((s, v) => s + v, 0);
+  const totalMetroPaid      = Object.values(metroPaidByFlat).reduce((s, v) => s + v, 0);
+  const totalCommonCredit   = Object.values(commonCreditByFlat).reduce((s, v) => s + v, 0);
 
   const fmt  = n => Number(n).toLocaleString('en-IN');
   const fmtR = n => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -859,9 +872,11 @@ function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = [
       </tr></thead>
       <tbody>
         ${adjustedFlats.map(f => {
-          const metroPaid = metroPaidByFlat[f.flat_id] || 0;
-          const gross = f.adjusted_price + watchmanShare + ebShare + drainageShare + otherShare;
-          const grand = Math.round((gross - metroPaid) * 100) / 100;
+          const metroPaid    = metroPaidByFlat[f.flat_id]    || 0;
+          const commonCredit = commonCreditByFlat[f.flat_id] || 0;
+          const totalAdj     = Math.round((metroPaid + commonCredit) * 100) / 100;
+          const gross        = f.adjusted_price + watchmanShare + ebShare + drainageShare + otherShare;
+          const grand        = Math.round((gross - totalAdj) * 100) / 100;
           return `
           <tr>
             <td><strong>${f.flat_no}</strong></td>
@@ -872,7 +887,7 @@ function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = [
             <td>${fmtR(ebShare)}</td>
             <td>${fmtR(drainageShare)}</td>
             <td>${fmtR(otherShare)}</td>
-            <td>${fmtAdj(metroPaid)}</td>
+            <td>${fmtAdj(totalAdj)}</td>
             <td><strong>${fmtR(grand)}</strong></td>
           </tr>`;
         }).join('')}
@@ -886,8 +901,8 @@ function renderFinalCalc(bill, commonCharges, commonReading = null, bookings = [
           <td><strong>${fmtR(totalEB)}</strong></td>
           <td><strong>${fmtR(totalDrainage)}</strong></td>
           <td><strong>${fmtR(totalOther)}</strong></td>
-          <td><strong><span style="color:var(--danger-text)">-₹${totalMetroPaid.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></strong></td>
-          <td><strong>${fmtR(totalWaterPrice + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid)}</strong></td>
+          <td><strong><span style="color:var(--danger-text)">-₹${(totalMetroPaid + totalCommonCredit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></strong></td>
+          <td><strong>${fmtR(totalWaterPrice + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
         </tr>
       </tfoot>
     </table>
