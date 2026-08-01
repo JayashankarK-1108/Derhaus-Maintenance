@@ -33,6 +33,9 @@
       <button class="tab" data-tab="usage">
         <span class="tab-icon">📊</span> Water Usage
       </button>
+      <button class="tab" data-tab="final">
+        <span class="tab-icon">🧾</span> Final Calculation
+      </button>
     </nav>
   </header>
 
@@ -132,6 +135,16 @@
 
     </div>
 
+    <!-- ── Tab 4: Final Calculation ─────────────── -->
+    <div id="tab-final" class="tab-panel" hidden>
+
+      <div class="panel">
+        <div class="panel-title"><span>🧾</span> Per-Flat Final Charges</div>
+        <div id="final-table"></div>
+      </div>
+
+    </div>
+
     <!-- ── Tab 3: Water Usage ──────────────────── -->
     <div id="tab-usage" class="tab-panel" hidden>
 
@@ -145,6 +158,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

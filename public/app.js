@@ -20,9 +20,10 @@ let flats = [];
 let activeTab = 'bookings';
 
 const TAB_META = {
-  bookings: { icon: '💧', title: 'Water', accent: 'Bookings',   sub: 'Track water deliveries for the month' },
-  flats:    { icon: '🏠', title: 'Flat',  accent: 'Details',    sub: 'View and update meter readings per flat' },
-  usage:    { icon: '📊', title: 'Water', accent: 'Usage',      sub: 'Consumption breakdown and billing' }
+  bookings: { icon: '💧', title: 'Water',  accent: 'Bookings',    sub: 'Track water deliveries for the month' },
+  flats:    { icon: '🏠', title: 'Flat',   accent: 'Details',     sub: 'View and update meter readings per flat' },
+  usage:    { icon: '📊', title: 'Water',  accent: 'Usage',       sub: 'Consumption breakdown and billing' },
+  final:    { icon: '🧾', title: 'Final',  accent: 'Calculation', sub: 'Per-flat total charges for the month' }
 };
 
 function updateIntro() {
@@ -117,6 +118,7 @@ async function loadAll() {
     if (activeTab === 'bookings') await loadBookings(month);
     if (activeTab === 'flats')    await loadFlatDetails(month);
     if (activeTab === 'usage')    await loadUsage(month);
+    if (activeTab === 'final')    await loadFinalCalc(month);
   } catch (err) {
     showError(err.message || 'Failed to load data. Check your connection.');
   }
@@ -693,6 +695,126 @@ async function saveCommonCharges() {
   } catch (err) {
     showError(err.message || 'Failed to save common charges.');
   }
+}
+
+// ────────────────────────────────────────────────
+// Tab 4 — Final Calculation
+// ────────────────────────────────────────────────
+
+async function loadFinalCalc(month) {
+  const [bill, commonCharges, commonReading] = await Promise.all([
+    apiFetch(`${API}/api/bill?month=${month}`),
+    apiFetch(`${API}/api/common-charges?month=${month}`),
+    apiFetch(`${API}/api/common-readings?month=${month}`)
+  ]);
+  renderFinalCalc(bill, commonCharges, commonReading);
+}
+
+function renderFinalCalc(bill, commonCharges, commonReading = null) {
+  const el = document.getElementById('final-table');
+  const numFlats = flats.length || 12;
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+
+  // Build lookup for common charges by category
+  const byCategory = Object.fromEntries(commonCharges.map(c => [c.category, Number(c.amount)]));
+
+  // Per-flat split amounts (equal share)
+  const watchmanShare  = Math.round(((byCategory['Watchman Salary'] || 0) / numFlats) * 100) / 100;
+  const ebShare        = Math.round(((byCategory['Common EB']       || 0) / numFlats) * 100) / 100;
+  const drainageShare  = Math.round(((byCategory['Drainage Load']   || 0) / numFlats) * 100) / 100;
+
+  // "Other Maintenance" = everything except Water, Watchman, EB, Drainage
+  const OTHER_CATS = ['Miscellaneous', 'Electrical Works', 'Lift Works', 'Civil Works', 'Plumbing Works'];
+  const otherTotal  = OTHER_CATS.reduce((s, cat) => s + (byCategory[cat] || 0), 0);
+  const otherShare  = Math.round((otherTotal / numFlats) * 100) / 100;
+
+  // Calculate adjusted water usage & price per flat (same logic as Water Usage tab)
+  const commonPrev = commonReading?.prev_reading != null ? Number(commonReading.prev_reading) : null;
+  const commonCur  = commonReading?.cur_reading  != null ? Number(commonReading.cur_reading)  : null;
+  const commonUnits = (commonCur !== null && commonPrev !== null) ? Math.max(0, commonCur - commonPrev) : 0;
+
+  const commonPct = bill.total_units > 0
+    ? Number(((commonUnits / (bill.total_units + commonUnits)) * 100).toFixed(2)) : 0;
+  const commonDiscShare = Math.round(commonPct / 100 * bill.discrepancy_litres);
+  const commonAdjusted  = commonUnits + commonDiscShare;
+
+  const adjustedFlats = (bill.flats || []).map(f => ({
+    ...f,
+    adjusted_usage: Number(f.units) + Number(f.discrepancy_share_litres)
+  }));
+  const grandAdjustedTotal = adjustedFlats.reduce((s, f) => s + f.adjusted_usage, 0) + commonAdjusted;
+
+  adjustedFlats.forEach(f => {
+    f.adjusted_price = grandAdjustedTotal > 0
+      ? Math.round((f.adjusted_usage / grandAdjustedTotal) * bill.water_bill_amount * 100) / 100
+      : 0;
+  });
+
+  if (adjustedFlats.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🧾</div>
+        <p>No data for this month yet. Add meter readings and bookings first.</p>
+      </div>`;
+    return;
+  }
+
+  // Grand totals row
+  const totalWaterUsage = adjustedFlats.reduce((s, f) => s + f.adjusted_usage, 0);
+  const totalWaterPrice = adjustedFlats.reduce((s, f) => s + f.adjusted_price, 0);
+  const totalWatchman   = watchmanShare  * numFlats;
+  const totalEB         = ebShare        * numFlats;
+  const totalDrainage   = drainageShare  * numFlats;
+  const totalOther      = otherShare     * numFlats;
+
+  const fmt  = n  => Number(n).toLocaleString('en-IN');
+  const fmtR = n  => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  el.innerHTML = `
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>Flat ID</th>
+        <th>Owner Name</th>
+        <th>Total Usage (L)</th>
+        <th>Water Price (₹)</th>
+        <th>Watchman Salary (₹)</th>
+        <th>EB Bill (₹)</th>
+        <th>Drainage Bill (₹)</th>
+        <th>Other Maintenance (₹)</th>
+        <th>Grand Total (₹)</th>
+      </tr></thead>
+      <tbody>
+        ${adjustedFlats.map(f => {
+          const grand = Math.round((f.adjusted_price + watchmanShare + ebShare + drainageShare + otherShare) * 100) / 100;
+          return `
+          <tr>
+            <td><strong>${f.flat_no}</strong></td>
+            <td>${f.owner_name || dash}</td>
+            <td>${fmt(f.adjusted_usage)}</td>
+            <td>${fmtR(f.adjusted_price)}</td>
+            <td>${fmtR(watchmanShare)}</td>
+            <td>${fmtR(ebShare)}</td>
+            <td>${fmtR(drainageShare)}</td>
+            <td>${fmtR(otherShare)}</td>
+            <td><strong>${fmtR(grand)}</strong></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2"><strong>Total</strong></td>
+          <td><strong>${fmt(totalWaterUsage)} L</strong></td>
+          <td><strong>${fmtR(totalWaterPrice)}</strong></td>
+          <td><strong>${fmtR(totalWatchman)}</strong></td>
+          <td><strong>${fmtR(totalEB)}</strong></td>
+          <td><strong>${fmtR(totalDrainage)}</strong></td>
+          <td><strong>${fmtR(totalOther)}</strong></td>
+          <td><strong>${fmtR(totalWaterPrice + totalWatchman + totalEB + totalDrainage + totalOther)}</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>`;
 }
 
 updateIntro();
