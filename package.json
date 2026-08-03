@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js && node generate-icons.js",
+    "icons": "node generate-icons.js"
   },
   "dependencies": {
     "express": "^4.19.2",
