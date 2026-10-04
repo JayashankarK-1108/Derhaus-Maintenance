@@ -8,7 +8,16 @@ function prevMonth(month) {
   return `${py}-${pm}`;
 }
 
-// Builds the full reconciled bill for a given month across all flats.
+const round2 = n => Math.round(n * 100) / 100;
+
+// Builds the full reconciled water bill for a given month across all flats
+// plus the common-area meter. All readings are in litres.
+//
+// Every consumer (each flat and the common area) gets:
+//   pct            = its metered litres / total metered litres (flats + common)
+//   discrepancy    = pct × (received − metered), so shares sum to the discrepancy
+//   adjusted       = metered + discrepancy share  (sums to total received)
+//   water_charge   = pct × water bill amount       (sums to the bill)
 async function computeBill(month) {
   const prior = prevMonth(month);
 
@@ -22,6 +31,13 @@ async function computeBill(month) {
   );
   const curMap = Object.fromEntries(currentReadings.map(r => [r.flat_id, Number(r.reading_units)]));
   const prevMap = Object.fromEntries(priorReadings.map(r => [r.flat_id, Number(r.reading_units)]));
+
+  const { rows: [commonRow] } = await pool.query(
+    'SELECT prev_reading, cur_reading FROM common_readings WHERE month = $1', [month]
+  );
+  const commonPrev = commonRow?.prev_reading != null ? Number(commonRow.prev_reading) : null;
+  const commonCur  = commonRow?.cur_reading  != null ? Number(commonRow.cur_reading)  : null;
+  const commonUnits = (commonPrev !== null && commonCur !== null) ? Math.max(0, commonCur - commonPrev) : 0;
 
   // Aggregate total received litres and bill amount from individual water bookings
   const { rows: [supply] } = await pool.query(
@@ -44,48 +60,50 @@ async function computeBill(month) {
     return { flat: f, units, cur, prev };
   });
 
-  const totalUnits = consumption.reduce((s, c) => s + c.units, 0);
-  // Readings are stored in litres directly — no unit conversion needed
-  const totalMeteredLitres = totalUnits;
+  const flatUnits = consumption.reduce((s, c) => s + c.units, 0);
+  const totalMeteredLitres = flatUnits + commonUnits;
   const totalReceivedLitres = Number(supply.total_received_litres) || totalMeteredLitres;
   const discrepancyLitres = totalReceivedLitres - totalMeteredLitres;
   const waterBillAmount = Number(supply.water_bill_amount) || 0;
 
-  const bill = consumption.map(({ flat, units, cur, prev }) => {
-    const pct = totalUnits > 0 ? units / totalUnits : 0;
-    const meteredLitres = units; // readings are in litres
+  function share(units) {
+    const pct = totalMeteredLitres > 0 ? units / totalMeteredLitres : 0;
     const discrepancyShareLitres = pct * discrepancyLitres;
-    const adjustedLitres = meteredLitres + discrepancyShareLitres;
-    const waterCharge = pct * waterBillAmount;
-    const totalDue = waterCharge + equalShare;
+    return {
+      units,
+      pct: Number((pct * 100).toFixed(2)),
+      metered_litres: Math.round(units),
+      discrepancy_share_litres: Math.round(discrepancyShareLitres),
+      adjusted_litres: Math.round(units + discrepancyShareLitres),
+      water_charge: round2(pct * waterBillAmount)
+    };
+  }
 
+  const bill = consumption.map(({ flat, units, cur, prev }) => {
+    const s = share(units);
     return {
       flat_id: flat.id,
       flat_no: flat.flat_no,
       owner_name: flat.owner_name,
       prev_reading: prev ?? null,
       cur_reading: cur ?? null,
-      units,
-      pct: Number((pct * 100).toFixed(2)),
-      metered_litres: Math.round(meteredLitres),
-      discrepancy_share_litres: Math.round(discrepancyShareLitres),
-      adjusted_litres: Math.round(adjustedLitres),
-      water_charge: Math.round(waterCharge * 100) / 100,
-      equal_share: Math.round(equalShare * 100) / 100,
-      total_due: Math.round(totalDue * 100) / 100
+      ...s,
+      equal_share: round2(equalShare),
+      total_due: round2(s.water_charge + equalShare)
     };
   });
 
   return {
     month,
-    total_units: totalUnits,
+    total_units: totalMeteredLitres,
     total_metered_litres: totalMeteredLitres,
     total_received_litres: totalReceivedLitres,
     discrepancy_litres: discrepancyLitres,
     water_bill_amount: waterBillAmount,
     total_equal_expenses: totalEqualExpenses,
-    equal_share: Math.round(equalShare * 100) / 100,
-    flats: bill
+    equal_share: round2(equalShare),
+    flats: bill,
+    common: { prev_reading: commonPrev, cur_reading: commonCur, ...share(commonUnits) }
   };
 }
 

@@ -10,5 +10,7 @@ services:
         sync: false          # Set this manually in the Render dashboard
       - key: NODE_ENV
         value: production
+      - key: ADMIN_PIN
+        sync: false          # Shared PIN required to save changes
       - key: NODE_VERSION
-        value: 18.20.4
+        value: 22.17.1

@@ -1,20 +1,78 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+const crypto = require('crypto');
 const path = require('path');
 const pool = require('./db');
 const { computeBill } = require('./billing');
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- Write protection ---
+// When ADMIN_PIN is set, every non-GET /api request must send it in the
+// X-Admin-Pin header. Reads stay open so residents can view bills.
+const ADMIN_PIN = process.env.ADMIN_PIN || '';
+if (!ADMIN_PIN) {
+  console.warn('WARNING: ADMIN_PIN is not set — anyone with the URL can modify data.');
+}
+
+function pinMatches(given) {
+  const a = crypto.createHash('sha256').update(String(given || '')).digest();
+  const b = crypto.createHash('sha256').update(ADMIN_PIN).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+app.use('/api', (req, res, next) => {
+  if (!ADMIN_PIN || req.method === 'GET') return next();
+  if (!pinMatches(req.get('X-Admin-Pin'))) {
+    return res.status(401).json({ error: 'admin PIN required' });
+  }
+  next();
+});
+
+// --- Validation helpers ---
 function validateMonth(month) {
-  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return 'month must be in YYYY-MM format';
   }
   return null;
+}
+
+function validateDate(date) {
+  if (typeof date !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(date) || isNaN(Date.parse(date))) {
+    return 'booking_date must be in YYYY-MM-DD format';
+  }
+  return null;
+}
+
+// Returns an error message unless v is a finite number >= 0 (> 0 when strict).
+function checkNumber(name, v, { strict = false, optional = false } = {}) {
+  if (v === undefined || v === null || v === '') return optional ? null : `${name} is required`;
+  const n = Number(v);
+  if (typeof v === 'boolean' || !Number.isFinite(n)) return `${name} must be a number`;
+  if (strict ? n <= 0 : n < 0) return strict ? `${name} must be greater than zero` : `${name} cannot be negative`;
+  return null;
+}
+
+function checkId(name, v, { optional = false } = {}) {
+  if (v === undefined || v === null || v === '') return optional ? null : `${name} is required`;
+  return Number.isInteger(Number(v)) && Number(v) > 0 ? null : `${name} must be a positive integer`;
+}
+
+const firstError = (...errs) => errs.find(Boolean) || null;
+
+const LOAD_TYPES = ['Metro', 'Private'];
+
+// Keep the 'Drainage Load' common charge equal to that month's drainage bookings
+function syncDrainageCharge(month) {
+  return pool.query(
+    `INSERT INTO common_charges (month, category, amount)
+     SELECT $1::char(7), 'Drainage Load', COALESCE(SUM(total_price), 0)
+     FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
+     ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
+    [month]
+  );
 }
 
 // --- Flats ---
@@ -48,14 +106,12 @@ app.get('/api/readings', async (req, res) => {
 
 app.post('/api/readings', async (req, res) => {
   const { flat_id, month, reading_units } = req.body;
-  if (!flat_id || reading_units === undefined) {
-    return res.status(400).json({ error: 'flat_id and reading_units are required' });
-  }
-  const monthErr = validateMonth(month);
-  if (monthErr) return res.status(400).json({ error: monthErr });
-  if (Number(reading_units) < 0) {
-    return res.status(400).json({ error: 'reading_units cannot be negative' });
-  }
+  const err = firstError(
+    checkId('flat_id', flat_id),
+    validateMonth(month),
+    checkNumber('reading_units', reading_units)
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
       `INSERT INTO meter_readings (flat_id, month, reading_units)
@@ -74,17 +130,12 @@ app.post('/api/readings', async (req, res) => {
 // --- Water supply (total received + bill amount for the month) ---
 app.post('/api/water-supply', async (req, res) => {
   const { month, total_received_litres, water_bill_amount } = req.body;
-  if (total_received_litres === undefined) {
-    return res.status(400).json({ error: 'total_received_litres is required' });
-  }
-  const monthErr = validateMonth(month);
-  if (monthErr) return res.status(400).json({ error: monthErr });
-  if (Number(total_received_litres) < 0) {
-    return res.status(400).json({ error: 'total_received_litres cannot be negative' });
-  }
-  if (water_bill_amount !== undefined && Number(water_bill_amount) < 0) {
-    return res.status(400).json({ error: 'water_bill_amount cannot be negative' });
-  }
+  const err = firstError(
+    validateMonth(month),
+    checkNumber('total_received_litres', total_received_litres),
+    checkNumber('water_bill_amount', water_bill_amount, { optional: true })
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
       `INSERT INTO water_supply (month, total_received_litres, water_bill_amount)
@@ -118,14 +169,12 @@ app.get('/api/expenses', async (req, res) => {
 
 app.post('/api/expenses', async (req, res) => {
   const { month, category, amount } = req.body;
-  if (!category || amount === undefined) {
-    return res.status(400).json({ error: 'category and amount are required' });
-  }
-  const monthErr = validateMonth(month);
-  if (monthErr) return res.status(400).json({ error: monthErr });
-  if (Number(amount) <= 0) {
-    return res.status(400).json({ error: 'amount must be greater than zero' });
-  }
+  const err = firstError(
+    !category || typeof category !== 'string' ? 'category is required' : null,
+    validateMonth(month),
+    checkNumber('amount', amount, { strict: true })
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
       `INSERT INTO expenses (month, category, amount, split_type)
@@ -160,15 +209,14 @@ app.get('/api/water-bookings', async (req, res) => {
 
 app.post('/api/water-bookings', async (req, res) => {
   const { booking_date, type_of_load, price, litres, flat_id } = req.body;
-  if (!booking_date || !type_of_load || litres === undefined) {
-    return res.status(400).json({ error: 'booking_date, type_of_load, and litres are required' });
-  }
-  if (Number(litres) <= 0) {
-    return res.status(400).json({ error: 'litres must be greater than zero' });
-  }
-  if (price !== undefined && Number(price) < 0) {
-    return res.status(400).json({ error: 'price cannot be negative' });
-  }
+  const err = firstError(
+    validateDate(booking_date),
+    LOAD_TYPES.includes(type_of_load) ? null : `type_of_load must be one of: ${LOAD_TYPES.join(', ')}`,
+    checkNumber('litres', litres, { strict: true }),
+    checkNumber('price', price, { optional: true }),
+    checkId('flat_id', flat_id, { optional: true })
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
       `INSERT INTO water_bookings (booking_date, type_of_load, price, litres, flat_id)
@@ -235,26 +283,20 @@ app.get('/api/drainage-bookings', async (req, res) => {
 
 app.post('/api/drainage-bookings', async (req, res) => {
   const { booking_date, num_loads, price_per_load } = req.body;
-  if (!booking_date) return res.status(400).json({ error: 'booking_date is required' });
-  if (!Number.isInteger(Number(num_loads)) || Number(num_loads) < 1)
-    return res.status(400).json({ error: 'num_loads must be a positive integer' });
-  if (Number(price_per_load) < 0)
-    return res.status(400).json({ error: 'price_per_load cannot be negative' });
+  const err = firstError(
+    validateDate(booking_date),
+    Number.isInteger(Number(num_loads)) && Number(num_loads) >= 1 ? null : 'num_loads must be a positive integer',
+    checkNumber('price_per_load', price_per_load, { optional: true })
+  );
+  if (err) return res.status(400).json({ error: err });
   const month = booking_date.slice(0, 7);
   try {
     const { rows } = await pool.query(
       `INSERT INTO drainage_bookings (booking_date, num_loads, price_per_load)
        VALUES ($1, $2, $3) RETURNING *`,
-      [booking_date, Number(num_loads), Number(price_per_load)]
+      [booking_date, Number(num_loads), Number(price_per_load || 0)]
     );
-    // Sync monthly total into common_charges Drainage Load row
-    await pool.query(
-      `INSERT INTO common_charges (month, category, amount)
-       SELECT $1::char(7), 'Drainage Load', COALESCE(SUM(total_price), 0)
-       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
-       ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
-      [month]
-    );
+    await syncDrainageCharge(month);
     res.json(rows[0]);
   } catch (err) {
     console.error(err);
@@ -263,22 +305,16 @@ app.post('/api/drainage-bookings', async (req, res) => {
 });
 
 app.delete('/api/drainage-bookings/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const idErr = checkId('id', req.params.id);
+  if (idErr) return res.status(400).json({ error: 'invalid id' });
   try {
+    // Derive the month in SQL — converting the DATE via JS would shift it by the server's timezone
     const { rows } = await pool.query(
-      'DELETE FROM drainage_bookings WHERE id=$1 RETURNING booking_date', [id]
+      `DELETE FROM drainage_bookings WHERE id=$1
+       RETURNING to_char(booking_date, 'YYYY-MM') AS month`, [Number(req.params.id)]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
-    const month = rows[0].booking_date.toISOString().slice(0, 7);
-    // Re-sync monthly total into common_charges
-    await pool.query(
-      `INSERT INTO common_charges (month, category, amount)
-       SELECT $1::char(7), 'Drainage Load', COALESCE(SUM(total_price), 0)
-       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
-       ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
-      [month]
-    );
+    await syncDrainageCharge(rows[0].month);
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -304,8 +340,12 @@ app.get('/api/common-readings', async (req, res) => {
 
 app.post('/api/common-readings', async (req, res) => {
   const { month, prev_reading, cur_reading } = req.body;
-  const monthErr = validateMonth(month);
-  if (monthErr) return res.status(400).json({ error: monthErr });
+  const err = firstError(
+    validateMonth(month),
+    checkNumber('prev_reading', prev_reading, { optional: true }),
+    checkNumber('cur_reading', cur_reading, { optional: true })
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
       `INSERT INTO common_readings (month, prev_reading, cur_reading)
@@ -331,14 +371,7 @@ app.get('/api/common-charges', async (req, res) => {
   if (monthErr) return res.status(400).json({ error: monthErr });
   try {
     // Always re-sync Drainage Load from drainage_bookings so it stays accurate
-    await pool.query(
-      `INSERT INTO common_charges (month, category, amount)
-       SELECT $1::char(7), 'Drainage Load',
-              COALESCE(SUM(CAST(num_loads AS NUMERIC) * price_per_load), 0)
-       FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)
-       ON CONFLICT (month, category) DO UPDATE SET amount = EXCLUDED.amount`,
-      [month]
-    );
+    await syncDrainageCharge(month);
     const { rows } = await pool.query(
       `SELECT cc.*, f.flat_no FROM common_charges cc
        LEFT JOIN flats f ON f.id = cc.paid_by_flat_id
@@ -353,18 +386,19 @@ app.get('/api/common-charges', async (req, res) => {
 
 app.post('/api/common-charges', async (req, res) => {
   const { month, category, amount, paid_by_flat_id } = req.body;
-  if (!category) return res.status(400).json({ error: 'category is required' });
-  const monthErr = validateMonth(month);
-  if (monthErr) return res.status(400).json({ error: monthErr });
-  if (amount !== undefined && Number(amount) < 0) {
-    return res.status(400).json({ error: 'amount cannot be negative' });
-  }
+  const err = firstError(
+    !category || typeof category !== 'string' ? 'category is required' : null,
+    validateMonth(month),
+    checkNumber('amount', amount, { optional: true }),
+    checkId('paid_by_flat_id', paid_by_flat_id, { optional: true })
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     let finalAmount;
     if (category === 'Drainage Load') {
       // Amount is always derived from drainage_bookings; never allow manual override
       const { rows: dr } = await pool.query(
-        `SELECT COALESCE(SUM(CAST(num_loads AS NUMERIC) * price_per_load), 0) AS total
+        `SELECT COALESCE(SUM(total_price), 0) AS total
          FROM drainage_bookings WHERE to_char(booking_date, 'YYYY-MM') = $1::char(7)`, [month]
       );
       finalAmount = dr[0].total;
@@ -406,14 +440,12 @@ app.get('/api/payments', async (req, res) => {
 
 app.post('/api/payments', async (req, res) => {
   const { flat_id, month, amount_due, paid, upi_ref } = req.body;
-  if (!flat_id || amount_due === undefined) {
-    return res.status(400).json({ error: 'flat_id and amount_due are required' });
-  }
-  const monthErr = validateMonth(month);
-  if (monthErr) return res.status(400).json({ error: monthErr });
-  if (Number(amount_due) < 0) {
-    return res.status(400).json({ error: 'amount_due cannot be negative' });
-  }
+  const err = firstError(
+    checkId('flat_id', flat_id),
+    validateMonth(month),
+    checkNumber('amount_due', amount_due)
+  );
+  if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
       `INSERT INTO payments (flat_id, month, amount_due, paid, upi_ref, paid_at)
@@ -436,4 +468,4 @@ app.post('/api/payments', async (req, res) => {
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Sunrise Apartments API running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Derhaus Maintenance API running on port ${PORT}`));
