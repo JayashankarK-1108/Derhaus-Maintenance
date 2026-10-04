@@ -180,7 +180,16 @@ async function loadAll() {
   } catch (err) {
     showError(err.message || 'Failed to load data. Check your connection.');
   }
+  markScrollableTables();
 }
+
+// Show a "swipe for more" hint on tables wider than the screen
+function markScrollableTables() {
+  document.querySelectorAll('.table-wrap').forEach(w => {
+    w.classList.toggle('is-scrollable', w.scrollWidth > w.clientWidth + 1);
+  });
+}
+window.addEventListener('resize', markScrollableTables);
 
 // ────────────────────────────────────────────────
 // Tab 1 — Water Bookings
@@ -861,13 +870,12 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   const totalCommonCredit   = Object.values(commonCreditByFlat).reduce((s, v) => s + v, 0);
 
   const fmt  = n => Number(n).toLocaleString('en-IN');
-  const fmtR = n => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtR = n => `${n < 0 ? '-' : ''}₹${Math.abs(Number(n)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtAdj = n => n === 0
     ? dash
     : `<span style="color:var(--danger-text);font-weight:600">-₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
 
   el.innerHTML = `
-    <div style="overflow-x:auto">
     <table>
       <thead><tr>
         <th>Flat ID</th>
@@ -919,8 +927,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
         </tr>
       </tfoot>
-    </table>
-    </div>`;
+    </table>`;
 }
 
 updateIntro();
