@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const pool = require('./db');
 const { computeBill } = require('./billing');
@@ -470,5 +471,18 @@ app.post('/api/payments', async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
+// Apply schema.sql (idempotent) on every start, so new columns/tables exist
+// even when the host's build command doesn't run `npm run migrate`.
+async function applySchema() {
+  try {
+    await pool.query(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+    console.log('Database schema is up to date.');
+  } catch (err) {
+    console.error('Failed to apply schema.sql:', err.message);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Derhaus Maintenance API running on port ${PORT}`));
+applySchema().finally(() => {
+  app.listen(PORT, () => console.log(`Derhaus Maintenance API running on port ${PORT}`));
+});
