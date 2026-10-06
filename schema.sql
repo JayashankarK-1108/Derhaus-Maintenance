@@ -73,6 +73,12 @@ CREATE TABLE IF NOT EXISTS water_bookings (
 -- Add flat_id to water_bookings (safe to re-run)
 ALTER TABLE water_bookings ADD COLUMN IF NOT EXISTS flat_id INTEGER REFERENCES flats(id);
 
+-- Bookings paid from the common maintenance fund ("Maint"): split equally
+-- across all flats instead of by meter usage. Every booking now has either a
+-- flat or Maint, so legacy bookings with no flat were paid by Maint.
+ALTER TABLE water_bookings ADD COLUMN IF NOT EXISTS paid_by_maint BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE water_bookings SET paid_by_maint = TRUE WHERE flat_id IS NULL AND NOT paid_by_maint;
+
 -- Add price_per_litre to water_supply for monthly summary storage
 ALTER TABLE water_supply ADD COLUMN IF NOT EXISTS price_per_litre NUMERIC DEFAULT 0;
 

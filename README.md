@@ -49,10 +49,13 @@ warning and allows anyone to make changes — only do that for local testing.
 
 Pick a month at the top. Readings are in **litres**.
 
-1. **Water Bookings** — log each tanker delivery (date, flat, Metro/Private,
-   litres, price). The month's total litres and price are the "received"
-   water and the water bill. Metro bookings paid by a flat are credited back
-   to that flat. Drainage loads are logged here too.
+1. **Water Bookings** — log each tanker delivery (date, who booked it,
+   Metro/Private, litres, price). "Who booked it" is either a flat or
+   **Maint** (paid from the common maintenance fund). All bookings count
+   toward the water received. Flat bookings make up the water bill, split
+   by usage; Metro bookings paid by a flat are credited back to that flat.
+   Maint bookings are split equally across all flats instead. Drainage
+   loads are logged here too.
 2. **Flat Details** — enter each flat's previous and current meter readings
    plus the common-area meter, and the month's common charges (with which
    flat, if any, paid upfront).
@@ -60,7 +63,8 @@ Pick a month at the top. Readings are in **litres**.
    metered usage, its share of the received-vs-metered discrepancy, total
    adjusted usage, and water price (% share × water bill).
 4. **Final Calculation** — per flat: own water price, equal share of the
-   common area's water price, equal shares of watchman / EB / drainage /
+   common area's water price, equal share of Maint-paid water loads, equal
+   shares of watchman / EB / drainage /
    other charges, minus any amounts that flat paid upfront.
 
 ## API reference

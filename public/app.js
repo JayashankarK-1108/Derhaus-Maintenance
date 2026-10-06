@@ -157,12 +157,16 @@ async function ensureFlats() {
   }
 }
 
+// Booking dropdown value for loads paid from the common maintenance fund
+const MAINT = 'maint';
+
 function populateFlatDropdown() {
   const sel = document.getElementById('booking-flat');
   if (!sel || flats.length === 0) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">— Select Flat —</option>' +
-    flats.map(f => `<option value="${f.id}">${esc(f.flat_no)}</option>`).join('');
+    flats.map(f => `<option value="${f.id}">${esc(f.flat_no)}</option>`).join('') +
+    `<option value="${MAINT}">Maint (common fund)</option>`;
   if (current) sel.value = current;
 }
 
@@ -207,19 +211,24 @@ async function loadBookings(month) {
 
 async function addBooking() {
   const booking_date = document.getElementById('booking-date').value;
-  const flat_id      = document.getElementById('booking-flat').value   || null;
+  const bookedBy     = document.getElementById('booking-flat').value;
   const type_of_load = document.getElementById('booking-type').value;
   const litres       = Number(document.getElementById('booking-litres').value || 0);
   const price        = Number(document.getElementById('booking-price').value  || 0);
 
-  if (!booking_date || !type_of_load || !litres) return;
   clearError();
+  if (!booking_date || !bookedBy || !type_of_load || !litres) {
+    showError('Fill in date, flat (or Maint), type of load and litres.');
+    return;
+  }
+  const paid_by_maint = bookedBy === MAINT;
   try {
     if (price < 0) throw new Error('Price cannot be negative');
     await apiFetch(`${API}/api/water-bookings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ booking_date, type_of_load, price, litres, flat_id: flat_id ? Number(flat_id) : null })
+      body: JSON.stringify({ booking_date, type_of_load, price, litres, paid_by_maint,
+        flat_id: paid_by_maint ? null : Number(bookedBy) })
     });
     document.getElementById('booking-flat').value   = '';
     document.getElementById('booking-type').value   = '';
@@ -280,7 +289,8 @@ function renderBookings(bookings) {
           <tr>
             <td>${i + 1}</td>
             <td>${new Date(b.booking_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-            <td>${b.flat_no ? `<strong>${esc(b.flat_no)}</strong>` : '<span style="color:var(--text-secondary)">—</span>'}</td>
+            <td>${b.paid_by_maint ? '<span class="maint-badge">Maint</span>'
+              : b.flat_no ? `<strong>${esc(b.flat_no)}</strong>` : '<span style="color:var(--text-secondary)">—</span>'}</td>
             <td><span class="load-badge">${esc(b.type_of_load)}</span></td>
             <td>₹${Number(b.price).toLocaleString('en-IN')}</td>
             <td>${Number(b.litres).toLocaleString('en-IN')} L</td>
@@ -584,8 +594,8 @@ function renderSummary(bill) {
     </div>
     <div class="card">
       <div class="card-icon">💰</div>
-      <div class="label">Equal Share / Flat</div>
-      <div class="value">₹${bill.equal_share.toLocaleString('en-IN')}</div>
+      <div class="label">Maint Water / Flat</div>
+      <div class="value">₹${bill.maint_water_share.toLocaleString('en-IN')}</div>
     </div>`;
 }
 
@@ -847,6 +857,8 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   // Water: each flat pays its own usage share (from the server) plus an equal
   // part of the common area's water cost.
   const commonWaterShare = round2((bill.common?.water_charge || 0) / numFlats);
+  // Water loads paid from the common fund ("Maint") are shared equally
+  const maintWaterShare  = Number(bill.maint_water_share) || 0;
   const billFlats = bill.flats || [];
 
   if (billFlats.length === 0) {
@@ -862,6 +874,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   const totalWaterUsage  = billFlats.reduce((s, f) => s + f.adjusted_litres, 0);
   const totalWaterPrice  = round2(billFlats.reduce((s, f) => s + f.water_charge, 0));
   const totalCommonWater = commonWaterShare * numFlats;
+  const totalMaintWater  = maintWaterShare  * numFlats;
   const totalWatchman    = watchmanShare * numFlats;
   const totalEB          = ebShare       * numFlats;
   const totalDrainage    = drainageShare * numFlats;
@@ -883,6 +896,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
         <th>Total Usage (L)</th>
         <th>Water Price (₹)</th>
         <th>Common Water (₹)</th>
+        <th>Maint Water (₹)</th>
         <th>Watchman Salary (₹)</th>
         <th>EB Bill (₹)</th>
         <th>Drainage Bill (₹)</th>
@@ -895,7 +909,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           const metroPaid    = metroPaidByFlat[f.flat_id]    || 0;
           const commonCredit = commonCreditByFlat[f.flat_id] || 0;
           const totalAdj     = round2(metroPaid + commonCredit);
-          const gross        = f.water_charge + commonWaterShare + watchmanShare + ebShare + drainageShare + otherShare;
+          const gross        = f.water_charge + commonWaterShare + maintWaterShare + watchmanShare + ebShare + drainageShare + otherShare;
           const grand        = round2(gross - totalAdj);
           return `
           <tr>
@@ -904,6 +918,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
             <td>${fmt(f.adjusted_litres)}</td>
             <td>${fmtR(f.water_charge)}</td>
             <td>${fmtR(commonWaterShare)}</td>
+            <td>${fmtR(maintWaterShare)}</td>
             <td>${fmtR(watchmanShare)}</td>
             <td>${fmtR(ebShare)}</td>
             <td>${fmtR(drainageShare)}</td>
@@ -919,12 +934,13 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           <td><strong>${fmt(totalWaterUsage)} L</strong></td>
           <td><strong>${fmtR(totalWaterPrice)}</strong></td>
           <td><strong>${fmtR(totalCommonWater)}</strong></td>
+          <td><strong>${fmtR(totalMaintWater)}</strong></td>
           <td><strong>${fmtR(totalWatchman)}</strong></td>
           <td><strong>${fmtR(totalEB)}</strong></td>
           <td><strong>${fmtR(totalDrainage)}</strong></td>
           <td><strong>${fmtR(totalOther)}</strong></td>
           <td><strong><span style="color:var(--danger-text)">-₹${(totalMetroPaid + totalCommonCredit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></strong></td>
-          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
+          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalMaintWater + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
         </tr>
       </tfoot>
     </table>`;

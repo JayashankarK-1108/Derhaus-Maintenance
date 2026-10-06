@@ -209,19 +209,22 @@ app.get('/api/water-bookings', async (req, res) => {
 
 app.post('/api/water-bookings', async (req, res) => {
   const { booking_date, type_of_load, price, litres, flat_id } = req.body;
+  const paidByMaint = req.body.paid_by_maint === true;
+  const hasFlat = flat_id !== undefined && flat_id !== null && flat_id !== '';
   const err = firstError(
     validateDate(booking_date),
     LOAD_TYPES.includes(type_of_load) ? null : `type_of_load must be one of: ${LOAD_TYPES.join(', ')}`,
     checkNumber('litres', litres, { strict: true }),
     checkNumber('price', price, { optional: true }),
-    checkId('flat_id', flat_id, { optional: true })
+    checkId('flat_id', flat_id, { optional: true }),
+    hasFlat === paidByMaint ? 'select either a flat or Maint for the booking' : null
   );
   if (err) return res.status(400).json({ error: err });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO water_bookings (booking_date, type_of_load, price, litres, flat_id)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [booking_date, type_of_load, price || 0, litres, flat_id || null]
+      `INSERT INTO water_bookings (booking_date, type_of_load, price, litres, flat_id, paid_by_maint)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [booking_date, type_of_load, price || 0, litres, hasFlat ? flat_id : null, paidByMaint]
     );
 
     // Sync monthly aggregates (total litres, total price, price/litre) into water_supply
