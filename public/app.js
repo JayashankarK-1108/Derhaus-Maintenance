@@ -75,31 +75,69 @@ function setPin(pin) {
   try { pin ? localStorage.setItem(PIN_KEY, pin) : localStorage.removeItem(PIN_KEY); } catch {}
 }
 
-// Fetch JSON; write requests carry the admin PIN and ask for it once on 401
-async function apiFetch(url, opts = {}, retried = false) {
-  const isWrite = opts.method && opts.method !== 'GET';
-  const headers = { ...(opts.headers || {}) };
-  if (isWrite && getPin()) headers['X-Admin-Pin'] = getPin();
-  const r = await fetch(url, { ...opts, headers });
-  if (r.status === 401 && isWrite && !retried) {
-    const pin = window.prompt('Enter the admin PIN to save changes:');
-    if (pin) {
-      setPin(pin);
-      return apiFetch(url, opts, true);
-    }
-  }
-  if (r.status === 401) setPin('');
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${r.status})`);
-  }
-  return r.json();
+// In-page PIN dialog. window.prompt() is silently blocked in many installed /
+// wrapped mobile apps, so the PIN is asked for with our own form instead.
+// Resolves to the entered PIN, or null if cancelled.
+let pinRequest = null;
+function askPin(message) {
+  if (pinRequest) return pinRequest;   // one dialog at a time
+  const dlg    = document.getElementById('pin-dialog');
+  const form   = document.getElementById('pin-form');
+  const input  = document.getElementById('pin-input');
+  const errEl  = document.getElementById('pin-error');
+  const cancel = document.getElementById('pin-cancel');
+  input.value = '';
+  errEl.textContent = message || '';
+  errEl.hidden = !message;
+  dlg.hidden = false;
+  setTimeout(() => input.focus(), 50);
+  pinRequest = new Promise(resolve => {
+    const done = value => {
+      dlg.hidden = true;
+      form.removeEventListener('submit', onSubmit);
+      cancel.removeEventListener('click', onCancel);
+      pinRequest = null;
+      resolve(value);
+    };
+    const onSubmit = e => { e.preventDefault(); done(input.value.trim() || null); };
+    const onCancel = () => done(null);
+    form.addEventListener('submit', onSubmit);
+    cancel.addEventListener('click', onCancel);
+  });
+  return pinRequest;
 }
 
+// Fetch JSON; write requests carry the admin PIN and ask for it on 401
+async function apiFetch(url, opts = {}) {
+  const isWrite = opts.method && opts.method !== 'GET';
+  for (let attempt = 0; ; attempt++) {
+    const headers = { ...(opts.headers || {}) };
+    if (isWrite && getPin()) headers['X-Admin-Pin'] = getPin();
+    const r = await fetch(url, { ...opts, headers });
+    if (r.status === 401 && isWrite) {
+      const hadPin = !!getPin();
+      setPin('');
+      if (attempt >= 3) throw new Error('Wrong admin PIN — changes were not saved.');
+      const pin = await askPin(hadPin ? 'That PIN is not correct. Please try again.' : '');
+      if (!pin) throw new Error('Not saved — the admin PIN is needed to save changes.');
+      setPin(pin);
+      continue;
+    }
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed (${r.status})`);
+    }
+    return r.json();
+  }
+}
+
+// Errors show in the banner at the top AND as a toast, so they're seen even
+// when the user is scrolled down at a Save button.
 function showError(msg) {
   const el = document.getElementById('error-banner');
   el.textContent = msg;
   el.hidden = false;
+  showToast('⚠ ' + msg, 'error');
 }
 function clearError() {
   const el = document.getElementById('error-banner');
@@ -108,7 +146,7 @@ function clearError() {
 }
 
 // Toast notification
-function showToast(msg) {
+function showToast(msg, kind = 'ok') {
   let toast = document.getElementById('toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -116,9 +154,10 @@ function showToast(msg) {
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
+  toast.classList.toggle('toast-error', kind === 'error');
   toast.classList.add('toast-show');
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => toast.classList.remove('toast-show'), 2800);
+  toast._timer = setTimeout(() => toast.classList.remove('toast-show'), kind === 'error' ? 6000 : 2800);
 }
 
 // Disable a button while an async fn runs (prevents double-submit)

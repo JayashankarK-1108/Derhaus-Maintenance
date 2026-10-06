@@ -12,7 +12,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
 
@@ -171,7 +171,20 @@
     </div>
   </div>
 
-  <script src="app.js?v=26"></script>
+  <div id="pin-dialog" class="modal" hidden>
+    <form id="pin-form" class="modal-card" autocomplete="off">
+      <div class="modal-title">🔒 Admin PIN</div>
+      <p class="modal-text">Enter the admin PIN to save changes.</p>
+      <input id="pin-input" type="password" inputmode="numeric" placeholder="PIN" aria-label="Admin PIN">
+      <div id="pin-error" class="modal-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" id="pin-cancel" class="btn-secondary">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="app.js?v=27"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js');
