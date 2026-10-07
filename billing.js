@@ -9,6 +9,7 @@ function prevMonth(month) {
 }
 
 const round2 = n => Math.round(n * 100) / 100;
+const round3 = n => Math.round(n * 1000) / 1000;
 
 // Builds the full reconciled water bill for a given month across all flats
 // plus the common-area meter. All readings are in litres.
@@ -17,9 +18,9 @@ const round2 = n => Math.round(n * 100) / 100;
 //   pct            = its metered litres / total metered litres (flats + common)
 //   discrepancy    = pct × (received − metered), so shares sum to the discrepancy
 //   adjusted       = metered + discrepancy share  (sums to total received)
-//   water_charge   = pct × water bill amount       (sums to the bill)
-// Bookings paid by Maint (common fund) are left out of the water bill and
-// returned as maint_water_share: an equal 1/N per flat.
+//   water_charge   = adjusted litres × price per litre
+// price_per_litre = all bookings' price ÷ all booked litres (flat and Maint
+// bookings alike), rounded to 3 decimals — the same rate the Bookings tab shows.
 async function computeBill(month) {
   const prior = prevMonth(month);
 
@@ -41,13 +42,10 @@ async function computeBill(month) {
   const commonCur  = commonRow?.cur_reading  != null ? Number(commonRow.cur_reading)  : null;
   const commonUnits = (commonPrev !== null && commonCur !== null) ? Math.max(0, commonCur - commonPrev) : 0;
 
-  // Aggregate total received litres and bill amounts from individual water bookings.
-  // Litres from every booking count as received; the price of Maint-paid bookings
-  // is split equally across flats instead of by usage.
+  // Aggregate total received litres and bill amount from individual water bookings
   const { rows: [supply] } = await pool.query(
     `SELECT COALESCE(SUM(litres), 0) AS total_received_litres,
-            COALESCE(SUM(price) FILTER (WHERE NOT paid_by_maint), 0) AS water_bill_amount,
-            COALESCE(SUM(price) FILTER (WHERE paid_by_maint), 0)     AS maint_water_amount
+            COALESCE(SUM(price), 0)  AS water_bill_amount
      FROM water_bookings
      WHERE to_char(booking_date, 'YYYY-MM') = $1`, [month]
   );
@@ -67,22 +65,23 @@ async function computeBill(month) {
 
   const flatUnits = consumption.reduce((s, c) => s + c.units, 0);
   const totalMeteredLitres = flatUnits + commonUnits;
-  const totalReceivedLitres = Number(supply.total_received_litres) || totalMeteredLitres;
+  const bookedLitres = Number(supply.total_received_litres) || 0;
+  const totalReceivedLitres = bookedLitres || totalMeteredLitres;
   const discrepancyLitres = totalReceivedLitres - totalMeteredLitres;
   const waterBillAmount = Number(supply.water_bill_amount) || 0;
-  const maintWaterAmount = Number(supply.maint_water_amount) || 0;
-  const maintWaterShare = flats.length ? maintWaterAmount / flats.length : 0;
+  const pricePerLitre = bookedLitres > 0 ? round3(waterBillAmount / bookedLitres) : 0;
 
   function share(units) {
     const pct = totalMeteredLitres > 0 ? units / totalMeteredLitres : 0;
     const discrepancyShareLitres = pct * discrepancyLitres;
+    const adjustedLitres = Math.round(units + discrepancyShareLitres);
     return {
       units,
       pct: Number((pct * 100).toFixed(2)),
       metered_litres: Math.round(units),
       discrepancy_share_litres: Math.round(discrepancyShareLitres),
-      adjusted_litres: Math.round(units + discrepancyShareLitres),
-      water_charge: round2(pct * waterBillAmount)
+      adjusted_litres: adjustedLitres,
+      water_charge: round2(adjustedLitres * pricePerLitre)
     };
   }
 
@@ -107,8 +106,7 @@ async function computeBill(month) {
     total_received_litres: totalReceivedLitres,
     discrepancy_litres: discrepancyLitres,
     water_bill_amount: waterBillAmount,
-    maint_water_amount: maintWaterAmount,
-    maint_water_share: round2(maintWaterShare),
+    price_per_litre: pricePerLitre,
     total_equal_expenses: totalEqualExpenses,
     equal_share: round2(equalShare),
     flats: bill,

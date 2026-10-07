@@ -286,7 +286,8 @@ function renderBookings(bookings) {
 
   const totalLitres    = bookings.reduce((s, b) => s + Number(b.litres), 0);
   const totalPrice     = bookings.reduce((s, b) => s + Number(b.price),  0);
-  const pricePerLitre  = totalLitres > 0 ? (totalPrice / totalLitres) : 0;
+  // Same 3-decimal rate the bill uses (billing.js price_per_litre)
+  const pricePerLitre  = totalLitres > 0 ? Math.round((totalPrice / totalLitres) * 1000) / 1000 : 0;
 
   summary.innerHTML = bookings.length === 0 ? '' : `
     <div class="card">
@@ -302,7 +303,7 @@ function renderBookings(bookings) {
     <div class="card">
       <div class="card-icon">📐</div>
       <div class="label">Price / Litre</div>
-      <div class="value">₹${pricePerLitre.toFixed(4)}</div>
+      <div class="value">₹${pricePerLitre.toFixed(3)}</div>
     </div>`;
 
   if (bookings.length === 0) {
@@ -633,8 +634,8 @@ function renderSummary(bill) {
     </div>
     <div class="card">
       <div class="card-icon">💰</div>
-      <div class="label">Maint Water / Flat</div>
-      <div class="value">₹${bill.maint_water_share.toLocaleString('en-IN')}</div>
+      <div class="label">Price / Litre</div>
+      <div class="value">₹${bill.price_per_litre.toFixed(3)}</div>
     </div>`;
 }
 
@@ -896,8 +897,6 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   // Water: each flat pays its own usage share (from the server) plus an equal
   // part of the common area's water cost.
   const commonWaterShare = round2((bill.common?.water_charge || 0) / numFlats);
-  // Water loads paid from the common fund ("Maint") are shared equally
-  const maintWaterShare  = Number(bill.maint_water_share) || 0;
   const billFlats = bill.flats || [];
 
   if (billFlats.length === 0) {
@@ -913,7 +912,6 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   const totalWaterUsage  = billFlats.reduce((s, f) => s + f.adjusted_litres, 0);
   const totalWaterPrice  = round2(billFlats.reduce((s, f) => s + f.water_charge, 0));
   const totalCommonWater = commonWaterShare * numFlats;
-  const totalMaintWater  = maintWaterShare  * numFlats;
   const totalWatchman    = watchmanShare * numFlats;
   const totalEB          = ebShare       * numFlats;
   const totalDrainage    = drainageShare * numFlats;
@@ -935,7 +933,6 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
         <th>Total Usage (L)</th>
         <th>Water Price (₹)</th>
         <th>Common Water (₹)</th>
-        <th>Maint Water (₹)</th>
         <th>Watchman Salary (₹)</th>
         <th>EB Bill (₹)</th>
         <th>Drainage Bill (₹)</th>
@@ -948,7 +945,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           const metroPaid    = metroPaidByFlat[f.flat_id]    || 0;
           const commonCredit = commonCreditByFlat[f.flat_id] || 0;
           const totalAdj     = round2(metroPaid + commonCredit);
-          const gross        = f.water_charge + commonWaterShare + maintWaterShare + watchmanShare + ebShare + drainageShare + otherShare;
+          const gross        = f.water_charge + commonWaterShare + watchmanShare + ebShare + drainageShare + otherShare;
           const grand        = round2(gross - totalAdj);
           return `
           <tr>
@@ -957,7 +954,6 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
             <td>${fmt(f.adjusted_litres)}</td>
             <td>${fmtR(f.water_charge)}</td>
             <td>${fmtR(commonWaterShare)}</td>
-            <td>${fmtR(maintWaterShare)}</td>
             <td>${fmtR(watchmanShare)}</td>
             <td>${fmtR(ebShare)}</td>
             <td>${fmtR(drainageShare)}</td>
@@ -973,13 +969,12 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           <td><strong>${fmt(totalWaterUsage)} L</strong></td>
           <td><strong>${fmtR(totalWaterPrice)}</strong></td>
           <td><strong>${fmtR(totalCommonWater)}</strong></td>
-          <td><strong>${fmtR(totalMaintWater)}</strong></td>
           <td><strong>${fmtR(totalWatchman)}</strong></td>
           <td><strong>${fmtR(totalEB)}</strong></td>
           <td><strong>${fmtR(totalDrainage)}</strong></td>
           <td><strong>${fmtR(totalOther)}</strong></td>
           <td><strong><span style="color:var(--danger-text)">-₹${(totalMetroPaid + totalCommonCredit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></strong></td>
-          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalMaintWater + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
+          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
         </tr>
       </tfoot>
     </table>`;
