@@ -479,6 +479,21 @@ tr.common-row:hover { background: #fef0c0; }
 }
 .form-field-narrow { max-width: 160px; }
 
+/* Keep the flat column pinned while a wide table scrolls sideways
+   (multi-column footer cells aren't pinned — they'd cover the totals beside them) */
+.table-wrap th:first-child,
+.table-wrap td:first-child:not([colspan]) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  white-space: nowrap;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border);
+}
+.table-wrap thead th:first-child { background: var(--bg); }
+.table-wrap tfoot td:first-child,
+.table-wrap tr.common-row td:first-child { background: var(--accent-light); }
+
 /* iPhone notch / home indicator (viewport-fit=cover + black-translucent status bar) */
 .site-header { padding-top: env(safe-area-inset-top, 0px); }
 .wrap { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
@@ -578,18 +593,6 @@ tr.common-row:hover { background: #fef0c0; }
   table { font-size: 12.5px; }
   th { padding: 8px 10px; font-size: 10px; white-space: nowrap; }
   td { padding: 9px 10px; white-space: nowrap; }
-  /* (multi-column footer cells aren't pinned — they'd cover the totals beside them) */
-  .table-wrap th:first-child,
-  .table-wrap td:first-child:not([colspan]) {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    background: var(--surface);
-    box-shadow: 1px 0 0 var(--border);
-  }
-  .table-wrap thead th:first-child { background: var(--bg); }
-  .table-wrap tfoot td:first-child,
-  .table-wrap tr.common-row td:first-child { background: var(--accent-light); }
 
   .reading-input, .table-select { font-size: 16px; padding: 8px 10px; }
   .reading-input { width: 104px; }

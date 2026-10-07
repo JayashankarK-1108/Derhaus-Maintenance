@@ -894,6 +894,9 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   const otherTotal  = OTHER_CATS.reduce((s, cat) => s + (byCategory[cat] || 0), 0);
   const otherShare  = round2(otherTotal / numFlats);
 
+  // Fixed monthly contribution per flat towards the future maintenance fund
+  const FUTURE_MAINTENANCE = 1000;
+
   // Water: each flat pays its own usage share (from the server) plus an equal
   // part of the common area's water cost.
   const commonWaterShare = round2((bill.common?.water_charge || 0) / numFlats);
@@ -916,6 +919,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
   const totalEB          = ebShare       * numFlats;
   const totalDrainage    = drainageShare * numFlats;
   const totalOther       = otherShare    * numFlats;
+  const totalFuture      = FUTURE_MAINTENANCE * numFlats;
   const totalMetroPaid      = Object.values(metroPaidByFlat).reduce((s, v) => s + v, 0);
   const totalCommonCredit   = Object.values(commonCreditByFlat).reduce((s, v) => s + v, 0);
 
@@ -937,6 +941,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
         <th>EB Bill (₹)</th>
         <th>Drainage Bill (₹)</th>
         <th>Other Maintenance (₹)</th>
+        <th>Future Maintenance (₹)</th>
         <th>Adjusted Amount (₹)</th>
         <th>Grand Total (₹)</th>
       </tr></thead>
@@ -945,7 +950,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           const metroPaid    = metroPaidByFlat[f.flat_id]    || 0;
           const commonCredit = commonCreditByFlat[f.flat_id] || 0;
           const totalAdj     = round2(metroPaid + commonCredit);
-          const gross        = f.water_charge + commonWaterShare + watchmanShare + ebShare + drainageShare + otherShare;
+          const gross        = f.water_charge + commonWaterShare + watchmanShare + ebShare + drainageShare + otherShare + FUTURE_MAINTENANCE;
           const grand        = round2(gross - totalAdj);
           return `
           <tr>
@@ -958,6 +963,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
             <td>${fmtR(ebShare)}</td>
             <td>${fmtR(drainageShare)}</td>
             <td>${fmtR(otherShare)}</td>
+            <td>${fmtR(FUTURE_MAINTENANCE)}</td>
             <td>${fmtAdj(totalAdj)}</td>
             <td><strong>${fmtR(grand)}</strong></td>
           </tr>`;
@@ -973,8 +979,9 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           <td><strong>${fmtR(totalEB)}</strong></td>
           <td><strong>${fmtR(totalDrainage)}</strong></td>
           <td><strong>${fmtR(totalOther)}</strong></td>
-          <td><strong><span style="color:var(--danger-text)">-₹${(totalMetroPaid + totalCommonCredit).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></strong></td>
-          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalWatchman + totalEB + totalDrainage + totalOther - totalMetroPaid - totalCommonCredit)}</strong></td>
+          <td><strong>${fmtR(totalFuture)}</strong></td>
+          <td><strong>${fmtAdj(round2(totalMetroPaid + totalCommonCredit))}</strong></td>
+          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalWatchman + totalEB + totalDrainage + totalOther + totalFuture - totalMetroPaid - totalCommonCredit)}</strong></td>
         </tr>
       </tfoot>
     </table>`;
