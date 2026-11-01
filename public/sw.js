@@ -1,4 +1,4 @@
-const CACHE = 'derhaus-v7';
+const CACHE = 'derhaus-v8';
 const STATIC = [
   '/',
   '/style.css',

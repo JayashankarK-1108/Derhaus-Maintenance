@@ -925,6 +925,15 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
 
   const fmt  = n => Number(n).toLocaleString('en-IN');
   const fmtR = n => `${n < 0 ? '-' : ''}₹${Math.abs(Number(n)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Grand total per flat; the footer adds only flats that owe money (positive
+  // totals). Negative totals (flats owed a refund) are left out of the sum.
+  const grandByFlat = Object.fromEntries(billFlats.map(f => {
+    const totalAdj = (metroPaidByFlat[f.flat_id] || 0) + (commonCreditByFlat[f.flat_id] || 0);
+    const gross    = f.water_charge + commonWaterShare + watchmanShare + ebShare + drainageShare + otherShare + FUTURE_MAINTENANCE;
+    return [f.flat_id, round2(gross - totalAdj)];
+  }));
+  const totalGrandPositive = round2(Object.values(grandByFlat).filter(g => g > 0).reduce((s, g) => s + g, 0));
+
   const fmtAdj = n => n === 0
     ? dash
     : `<span style="color:var(--danger-text);font-weight:600">-₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
@@ -947,11 +956,10 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
       </tr></thead>
       <tbody>
         ${billFlats.map(f => {
+          const grand        = grandByFlat[f.flat_id];
           const metroPaid    = metroPaidByFlat[f.flat_id]    || 0;
           const commonCredit = commonCreditByFlat[f.flat_id] || 0;
           const totalAdj     = round2(metroPaid + commonCredit);
-          const gross        = f.water_charge + commonWaterShare + watchmanShare + ebShare + drainageShare + otherShare + FUTURE_MAINTENANCE;
-          const grand        = round2(gross - totalAdj);
           return `
           <tr>
             <td><strong>${esc(f.flat_no)}</strong></td>
@@ -981,7 +989,7 @@ function renderFinalCalc(bill, commonCharges, bookings = []) {
           <td><strong>${fmtR(totalOther)}</strong></td>
           <td><strong>${fmtR(totalFuture)}</strong></td>
           <td><strong>${fmtAdj(round2(totalMetroPaid + totalCommonCredit))}</strong></td>
-          <td><strong>${fmtR(totalWaterPrice + totalCommonWater + totalWatchman + totalEB + totalDrainage + totalOther + totalFuture - totalMetroPaid - totalCommonCredit)}</strong></td>
+          <td><strong>${fmtR(totalGrandPositive)}</strong></td>
         </tr>
       </tfoot>
     </table>`;
