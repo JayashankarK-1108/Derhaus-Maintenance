@@ -63,7 +63,7 @@ function checkId(name, v, { optional = false } = {}) {
 
 const firstError = (...errs) => errs.find(Boolean) || null;
 
-const LOAD_TYPES = ['Metro', 'Private'];
+const LOAD_TYPES = ['Metro', 'Private', 'Extra Load'];
 
 // Keep the 'Drainage Load' common charge equal to that month's drainage bookings
 function syncDrainageCharge(month) {
